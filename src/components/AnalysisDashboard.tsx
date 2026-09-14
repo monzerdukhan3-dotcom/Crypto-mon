@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SYMBOLS, TIMEFRAMES, type Symbol, type Timeframe } from "@/lib/constants";
+import { buildTradePlan } from "@/lib/tradePlan";
 import type { Candle } from "@/lib/types";
+import { detectZones } from "@/lib/zones";
 import CandlestickChart from "./CandlestickChart";
+import ZonesSidebar from "./ZonesSidebar";
 
 interface FetchResult {
   key: string;
@@ -50,8 +53,20 @@ export default function AnalysisDashboard() {
   const status: "loading" | "ready" | "error" =
     result?.key !== requestKey ? "loading" : result.error ? "error" : "ready";
 
+  const candles = useMemo(
+    () => (status === "ready" ? (result?.candles ?? []) : []),
+    [status, result]
+  );
+  const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
+
+  const zones = useMemo(() => detectZones(candles), [candles]);
+  const tradePlan = useMemo(
+    () => (currentPrice !== null ? buildTradePlan(zones, currentPrice) : null),
+    [zones, currentPrice]
+  );
+
   return (
-    <div className="flex w-full max-w-3xl flex-col gap-6">
+    <div className="flex w-full max-w-6xl flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row">
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
           العملة
@@ -84,18 +99,24 @@ export default function AnalysisDashboard() {
         </label>
       </div>
 
-      <div className="h-96 w-full overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
-        {status === "loading" && (
-          <div className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
-            جاري تحميل بيانات {symbol}...
-          </div>
+      <div className="flex flex-col gap-4 lg:flex-row">
+        <div className="h-96 flex-1 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 lg:h-[560px]">
+          {status === "loading" && (
+            <div className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+              جاري تحميل بيانات {symbol}...
+            </div>
+          )}
+          {status === "error" && (
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-500">
+              {result?.error}
+            </div>
+          )}
+          {status === "ready" && <CandlestickChart data={candles} zones={zones} />}
+        </div>
+
+        {status === "ready" && currentPrice !== null && (
+          <ZonesSidebar zones={zones} tradePlan={tradePlan} currentPrice={currentPrice} />
         )}
-        {status === "error" && (
-          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-500">
-            {result?.error}
-          </div>
-        )}
-        {status === "ready" && result && <CandlestickChart data={result.candles} />}
       </div>
     </div>
   );

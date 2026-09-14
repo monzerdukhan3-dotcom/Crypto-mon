@@ -7,13 +7,15 @@ import {
   createChart,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle } from "@/lib/types";
+import type { Candle, Zone } from "@/lib/types";
+import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
 interface CandlestickChartProps {
   data: Candle[];
+  zones?: Zone[];
 }
 
-export default function CandlestickChart({ data }: CandlestickChartProps) {
+export default function CandlestickChart({ data, zones = [] }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,6 +53,12 @@ export default function CandlestickChart({ data }: CandlestickChartProps) {
         close: c.close,
       }))
     );
+
+    const primitives = zones.map((zone) => new ZoneRectanglePrimitive(zone));
+    for (const primitive of primitives) {
+      series.attachPrimitive(primitive);
+    }
+
     chart.timeScale().fitContent();
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -65,9 +73,12 @@ export default function CandlestickChart({ data }: CandlestickChartProps) {
 
     return () => {
       resizeObserver.disconnect();
+      for (const primitive of primitives) {
+        series.detachPrimitive(primitive);
+      }
       chart.remove();
     };
-  }, [data]);
+  }, [data, zones]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
