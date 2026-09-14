@@ -38,6 +38,8 @@ interface ZoneCandidate {
   impulseMoveAtr: number;
   /** Average body-to-range ratio of the first few impulse candles (0-1); higher = cleaner move. */
   impulseCleanliness: number;
+  /** Average volume during formation, relative to the dataset's average volume. */
+  volumeRatio: number;
 }
 
 function bodyToRangeRatio(candle: Candle): number {
@@ -105,6 +107,7 @@ function mergeCandidatePair(a: ZoneCandidate, b: ZoneCandidate): ZoneCandidate {
     baseSize: Math.max(a.baseSize, b.baseSize),
     impulseMoveAtr: Math.max(a.impulseMoveAtr, b.impulseMoveAtr),
     impulseCleanliness: Math.max(a.impulseCleanliness, b.impulseCleanliness),
+    volumeRatio: Math.max(a.volumeRatio, b.volumeRatio),
   };
 }
 
@@ -155,14 +158,18 @@ function scoreZone(candidate: ZoneCandidate, testCount: number): { score: number
 
   if (candidate.baseSize >= 2) score += 1;
   if (candidate.impulseCleanliness >= 0.65) score += 1;
+  // A zone formed on above-average volume had real participation behind it.
+  if (candidate.volumeRatio >= 1.3) score += 1;
 
-  const strength: ZoneStrength = score >= 5 ? "strong" : score >= 2 ? "medium" : "weak";
+  const strength: ZoneStrength = score >= 6 ? "strong" : score >= 2 ? "medium" : "weak";
   return { score, strength };
 }
 
 /**
  * Detects supply (resistance) and demand (support) zones with a
- * Base-and-Impulse model, then cleans the result up for practical use:
+ * Base-and-Impulse model — scored by freshness, impulse size, base quality,
+ * breakout cleanliness, and formation volume — then cleans the result up for
+ * practical use:
  * - broken zones (a full candle closes decisively through them) are dropped
  *   entirely rather than kept around for historical context
  * - near-duplicate zones of the same type (within half an ATR of each
@@ -190,6 +197,9 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
   const swings = detectSwingPoints(candles, swingLookback);
   const atr = calculateATR(candles, atrPeriod);
   const referenceAtr = [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
+
+  const datasetAvgVolume =
+    candles.reduce((sum, c) => sum + (c.volume ?? 0), 0) / candles.length;
 
   const candidates: ZoneCandidate[] = [];
 
@@ -228,6 +238,11 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     const impulseCleanliness =
       cleanlinessSample.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / cleanlinessSample.length;
 
+    const volumeSample = [...baseCandles, ...window.slice(0, Math.min(2, window.length))];
+    const avgFormationVolume =
+      volumeSample.reduce((sum, c) => sum + (c.volume ?? 0), 0) / volumeSample.length;
+    const volumeRatio = datasetAvgVolume > 0 ? avgFormationVolume / datasetAvgVolume : 1;
+
     candidates.push({
       type: isDemand ? "demand" : "supply",
       top,
@@ -237,6 +252,7 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
       baseSize: swing.index - baseStartIndex + 1,
       impulseMoveAtr,
       impulseCleanliness,
+      volumeRatio,
     });
   }
 

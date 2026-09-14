@@ -5,6 +5,8 @@ export interface BuildTradePlanOptions {
   stopBufferRatio?: number;
   /** Fallback risk-multiples used for any target with no supply zone to aim at. */
   targetRMultiples?: number[];
+  /** Minimum acceptable reward:risk on the first target — reject the setup below this. */
+  minFirstTargetRR?: number;
 }
 
 /**
@@ -12,14 +14,16 @@ export interface BuildTradePlanOptions {
  * current price: entry at the zone's top (where a pullback would first tag
  * it), stop loss just under the zone's bottom, and 3 ascending targets that
  * prefer real active supply zones above entry, falling back to risk-multiples
- * when there aren't enough of those.
+ * when there aren't enough of those. Returns null if there's no such zone,
+ * or if the first target's reward:risk doesn't clear the minimum bar — a
+ * technically strong zone still isn't a trade if the setup itself is poor.
  */
 export function buildTradePlan(
   zones: Zone[],
   currentPrice: number,
   options: BuildTradePlanOptions = {}
 ): TradePlan | null {
-  const { stopBufferRatio = 0.15, targetRMultiples = [1.5, 2.5, 4] } = options;
+  const { stopBufferRatio = 0.15, targetRMultiples = [1.5, 2.5, 4], minFirstTargetRR = 1 } = options;
 
   const activeDemandZonesBelow = zones.filter(
     (z) => z.type === "demand" && z.active && z.top < currentPrice
@@ -49,6 +53,7 @@ export function buildTradePlan(
   }
 
   const riskRewardRatios = targets.map((t) => Number(((t - entry) / riskAmount).toFixed(2)));
+  if (riskRewardRatios[0] < minFirstTargetRR) return null;
 
   return { zone: nearest, entry, stopLoss, targets, riskAmount, riskRewardRatios };
 }

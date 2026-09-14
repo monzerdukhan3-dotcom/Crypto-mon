@@ -1,8 +1,6 @@
 import { formatPrice } from "./format";
+import { detectTrend } from "./trend";
 import type { Candle, Zone } from "./types";
-
-const TREND_LOOKBACK = 20;
-const TREND_THRESHOLD = 0.015; // 1.5%
 
 const STRENGTH_LABEL_AR: Record<Zone["strength"], string> = {
   strong: "قوية",
@@ -11,13 +9,9 @@ const STRENGTH_LABEL_AR: Record<Zone["strength"], string> = {
 };
 
 function describeTrend(candles: Candle[]): string {
-  const lookback = Math.min(TREND_LOOKBACK, candles.length - 1);
-  const past = candles[candles.length - 1 - lookback].close;
-  const current = candles[candles.length - 1].close;
-  const change = (current - past) / past;
-
-  if (change > TREND_THRESHOLD) return "الاتجاه العام للسعر صاعد خلال الفترة المعروضة";
-  if (change < -TREND_THRESHOLD) return "الاتجاه العام للسعر هابط خلال الفترة المعروضة";
+  const trend = detectTrend(candles);
+  if (trend === "up") return "الاتجاه العام للسعر صاعد خلال الفترة المعروضة";
+  if (trend === "down") return "الاتجاه العام للسعر هابط خلال الفترة المعروضة";
   return "الاتجاه العام للسعر متذبذب (عرضي) خلال الفترة المعروضة";
 }
 

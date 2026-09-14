@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SYMBOLS, TIMEFRAMES, type Symbol, type Timeframe } from "@/lib/constants";
+import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan } from "@/lib/tradePlan";
 import type { Candle } from "@/lib/types";
+import { checkVolatility } from "@/lib/volatility";
 import { detectZones } from "@/lib/zones";
 import CandlestickChart from "./CandlestickChart";
 import ZonesSidebar from "./ZonesSidebar";
@@ -13,36 +14,64 @@ import ZonesSidebar from "./ZonesSidebar";
 interface FetchResult {
   key: string;
   candles: Candle[];
+  dailyCandles: Candle[] | null;
   error: string | null;
+}
+
+async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Candle[]> {
+  const res = await fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`);
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.error ?? "فشل تحميل البيانات");
+  }
+  return json.candles as Candle[];
 }
 
 export default function AnalysisDashboard() {
   const [symbol, setSymbol] = useState<Symbol>("BTC");
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
   const [result, setResult] = useState<FetchResult | null>(null);
+  const [availableSymbols, setAvailableSymbols] = useState<SymbolInfo[]>(DEFAULT_SYMBOLS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/symbols")
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && Array.isArray(json.symbols) && json.symbols.length > 0) {
+          setAvailableSymbols(json.symbols);
+        }
+      })
+      .catch(() => {
+        // Keep the pinned defaults — the dropdown still works either way.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const requestKey = `${symbol}:${timeframe}`;
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`)
-      .then(async (res) => {
-        const json = await res.json();
-        if (!res.ok) {
-          throw new Error(json.error ?? "فشل تحميل البيانات");
-        }
-        return json.candles as Candle[];
-      })
-      .then((candles) => {
+    Promise.all([
+      fetchCandleSet(symbol, timeframe),
+      // Higher-timeframe trend confirmation: skip the extra fetch when
+      // already viewing the daily chart, and don't let it fail the whole
+      // request if it errors — it's a confirmation signal, not core data.
+      timeframe === "1d" ? Promise.resolve(null) : fetchCandleSet(symbol, "1d").catch(() => null),
+    ])
+      .then(([candles, dailyCandles]) => {
         if (cancelled) return;
-        setResult({ key: requestKey, candles, error: null });
+        setResult({ key: requestKey, candles, dailyCandles, error: null });
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         setResult({
           key: requestKey,
           candles: [],
+          dailyCandles: null,
           error: error instanceof Error ? error.message : "فشل تحميل البيانات",
         });
       });
@@ -59,6 +88,10 @@ export default function AnalysisDashboard() {
     () => (status === "ready" ? (result?.candles ?? []) : []),
     [status, result]
   );
+  const dailyCandles = useMemo(
+    () => (status === "ready" ? (result?.dailyCandles ?? null) : null),
+    [status, result]
+  );
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
 
   const zones = useMemo(() => detectZones(candles), [candles]);
@@ -67,13 +100,14 @@ export default function AnalysisDashboard() {
     [zones, currentPrice]
   );
   const confidence = useMemo(
-    () => (tradePlan ? scoreTradeConfidence(tradePlan, zones) : null),
-    [tradePlan, zones]
+    () => (tradePlan ? scoreTradeConfidence(tradePlan, zones, candles, dailyCandles) : null),
+    [tradePlan, zones, candles, dailyCandles]
   );
   const technicalSummary = useMemo(
     () => (currentPrice !== null ? generateTechnicalSummary(candles, zones, currentPrice) : ""),
     [candles, zones, currentPrice]
   );
+  const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
@@ -85,7 +119,7 @@ export default function AnalysisDashboard() {
             onChange={(e) => setSymbol(e.target.value as Symbol)}
             className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-success/40"
           >
-            {SYMBOLS.map((s) => (
+            {availableSymbols.map((s) => (
               <option key={s.symbol} value={s.symbol}>
                 {s.label}
               </option>
@@ -131,6 +165,7 @@ export default function AnalysisDashboard() {
             confidence={confidence}
             technicalSummary={technicalSummary}
             currentPrice={currentPrice}
+            volatility={volatility}
           />
         )}
       </div>

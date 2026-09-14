@@ -1,8 +1,10 @@
-import { SYMBOLS, type Symbol, type Timeframe } from "./constants";
+import type { SymbolInfo } from "./constants";
+import type { Timeframe } from "./constants";
 import type { Candle } from "./types";
 
 const CRYPTO_COM_CANDLESTICK_URL =
   "https://api.crypto.com/exchange/v1/public/get-candlestick";
+const CRYPTO_COM_TICKERS_URL = "https://api.crypto.com/exchange/v1/public/get-tickers";
 
 // Crypto.com's public candlestick endpoint uses its own timeframe codes.
 // Day candles are capitalized ("1D"); everything else matches our UI values.
@@ -44,17 +46,14 @@ const DEFAULT_CANDLE_COUNT = 200;
  * process.env.CRYPTO_COM_API_KEY at call time — never hardcode it.
  */
 export async function getCandles(
-  symbol: Symbol,
+  symbol: string,
   timeframe: Timeframe,
   limit: number = DEFAULT_CANDLE_COUNT
 ): Promise<Candle[]> {
-  const info = SYMBOLS.find((s) => s.symbol === symbol);
-  if (!info) {
-    throw new Error(`Unknown symbol: ${symbol}`);
-  }
+  const pair = `${symbol.toUpperCase()}_USDT`;
 
   const url = new URL(CRYPTO_COM_CANDLESTICK_URL);
-  url.searchParams.set("instrument_name", info.pair);
+  url.searchParams.set("instrument_name", pair);
   url.searchParams.set("timeframe", TIMEFRAME_TO_CRYPTO_COM[timeframe]);
   url.searchParams.set("count", String(limit));
 
@@ -80,4 +79,43 @@ export async function getCandles(
       volume: Number(c.v),
     }))
     .sort((a, b) => a.time - b.time);
+}
+
+interface CryptoComTicker {
+  i: string; // instrument name, e.g. "BTC_USDT"
+  vv: string; // 24h volume value (quote currency, ~USD for *_USDT pairs)
+}
+
+interface CryptoComTickersResponse {
+  code: number;
+  result: { data: CryptoComTicker[] };
+}
+
+// Fiat/stablecoin-adjacent base currencies to exclude from a "top coins" list.
+const EXCLUDED_BASE_SYMBOLS = new Set(["USD", "EUR", "GBP", "AUD", "JPY", "CAD", "CHF"]);
+
+/**
+ * Fetches all USDT trading pairs from Crypto.com's public tickers endpoint
+ * (also public, no API key) and ranks them by 24h quote volume — the closest
+ * practical proxy to market activity/size this exchange API exposes (it
+ * doesn't report market cap directly).
+ */
+export async function getTopSymbolsByVolume(limit = 30): Promise<SymbolInfo[]> {
+  const res = await fetch(CRYPTO_COM_TICKERS_URL, { next: { revalidate: 300 } });
+  if (!res.ok) {
+    throw new Error(`Crypto.com tickers request failed (${res.status}): ${await res.text()}`);
+  }
+
+  const json = (await res.json()) as CryptoComTickersResponse;
+  if (json.code !== 0) {
+    throw new Error(`Crypto.com API returned error code ${json.code}`);
+  }
+
+  return json.result.data
+    .filter((t) => t.i.endsWith("_USDT"))
+    .filter((t) => !EXCLUDED_BASE_SYMBOLS.has(t.i.replace("_USDT", "")))
+    .map((t) => ({ symbol: t.i.replace("_USDT", ""), pair: t.i, volumeUsd: Number(t.vv) }))
+    .sort((a, b) => b.volumeUsd - a.volumeUsd)
+    .slice(0, limit)
+    .map(({ symbol, pair }) => ({ symbol, label: symbol, pair }));
 }

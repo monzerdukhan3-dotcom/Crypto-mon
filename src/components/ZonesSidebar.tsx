@@ -1,8 +1,20 @@
-import { ArrowUpRight, Crosshair, Gauge, Layers, LineChart, Newspaper, Shield, Target } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CircleCheckBig,
+  Crosshair,
+  Gauge,
+  Layers,
+  LineChart,
+  Newspaper,
+  Shield,
+  Target,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
 import type { TradeConfidence } from "@/lib/tradeConfidence";
 import type { TradePlan, Zone, ZoneStrength } from "@/lib/types";
+import type { VolatilityCheck } from "@/lib/volatility";
 
 interface ZonesSidebarProps {
   zones: Zone[];
@@ -10,6 +22,7 @@ interface ZonesSidebarProps {
   confidence: TradeConfidence | null;
   technicalSummary: string;
   currentPrice: number;
+  volatility: VolatilityCheck | null;
 }
 
 const STRENGTH_LABEL: Record<ZoneStrength, string> = {
@@ -25,7 +38,7 @@ const STRENGTH_CLASSES: Record<ZoneStrength, string> = {
 };
 
 const FUNDAMENTAL_PLACEHOLDER =
-  "يحتاج هذا القسم ربط مصدر أخبار خارجي لاحقًا (مثل بيانات FOMC، مؤشر CPI، أو تدفقات صناديق ETF) لعرض تحليل أساسي حي — هذه البيانات غير متوفرة حاليًا داخل المشروع.";
+  "يحتاج هذا القسم ربط مصدر أخبار خارجي لاحقًا (مثل بيانات FOMC، مؤشر CPI، أو تدفقات صناديق ETF) لعرض تحليل أساسي حي، وينطبق نفس الأمر على فلتر مسافة الأمان من الأخبار (يحتاج ربط تقويم اقتصادي خارجي) — هذه البيانات غير متوفرة حاليًا داخل المشروع.";
 
 function Row({
   icon: Icon,
@@ -61,6 +74,24 @@ function Card({ icon: Icon, title, children }: { icon: typeof Target; title: str
   );
 }
 
+function Note({
+  tone,
+  icon: Icon,
+  children,
+}: {
+  tone: "warning" | "success";
+  icon: typeof AlertTriangle;
+  children: ReactNode;
+}) {
+  const classes = tone === "warning" ? "bg-warning-soft text-warning" : "bg-success-soft text-success";
+  return (
+    <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs font-medium ${classes}`}>
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function confidenceColors(score: number): { text: string; bar: string } {
   if (score > 60) return { text: "text-success", bar: "bg-success" };
   if (score >= 40) return { text: "text-warning", bar: "bg-warning" };
@@ -73,6 +104,7 @@ export default function ZonesSidebar({
   confidence,
   technicalSummary,
   currentPrice,
+  volatility,
 }: ZonesSidebarProps) {
   const activeZones = zones
     .filter((z) => z.active)
@@ -82,28 +114,36 @@ export default function ZonesSidebar({
   return (
     <aside className="flex w-full flex-col gap-5 lg:w-80">
       <Card icon={Target} title="خطة الصفقة">
-        {tradePlan ? (
-          <div className="flex flex-col gap-3">
-            <Row icon={Crosshair} label="الدخول" value={formatPrice(tradePlan.entry)} />
-            <Row
-              icon={Shield}
-              label="وقف الخسارة"
-              value={formatPrice(tradePlan.stopLoss)}
-              className="text-danger"
-            />
-            {tradePlan.targets.map((target, i) => (
+        <div className="flex flex-col gap-3">
+          {volatility?.isHigh && (
+            <Note tone="warning" icon={AlertTriangle}>
+              تقلب مرتفع حاليًا — الحركة أعلى من المعتاد لهذه العملة بنسبة{" "}
+              {Math.round((volatility.currentAtrPct / volatility.averageAtrPct - 1) * 100)}%
+            </Note>
+          )}
+          {tradePlan ? (
+            <>
+              <Row icon={Crosshair} label="الدخول" value={formatPrice(tradePlan.entry)} />
               <Row
-                key={i}
-                icon={ArrowUpRight}
-                label={`الهدف ${i + 1}`}
-                value={`${formatPrice(target)} (R ${tradePlan.riskRewardRatios[i]})`}
-                className="text-success"
+                icon={Shield}
+                label="وقف الخسارة"
+                value={formatPrice(tradePlan.stopLoss)}
+                className="text-danger"
               />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted">لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</p>
-        )}
+              {tradePlan.targets.map((target, i) => (
+                <Row
+                  key={i}
+                  icon={ArrowUpRight}
+                  label={`الهدف ${i + 1}`}
+                  value={`${formatPrice(target)} (R ${tradePlan.riskRewardRatios[i]})`}
+                  className="text-success"
+                />
+              ))}
+            </>
+          ) : (
+            <p className="text-sm text-muted">لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</p>
+          )}
+        </div>
       </Card>
 
       <Card icon={Gauge} title="قوة الصفقة">
@@ -121,6 +161,16 @@ export default function ZonesSidebar({
                 style={{ width: `${confidence.score}%` }}
               />
             </div>
+            {confidence.hasReversalPattern && (
+              <Note tone="success" icon={CircleCheckBig}>
+                تم رصد نمط شمعة انعكاسي (Pin Bar / Engulfing) عند المنطقة
+              </Note>
+            )}
+            {confidence.hasMtfConflict && (
+              <Note tone="warning" icon={AlertTriangle}>
+                الاتجاه على الفريم اليومي هابط — قد يتعارض مع هذه الصفقة
+              </Note>
+            )}
           </div>
         ) : (
           <p className="text-sm text-muted">لا توجد صفقة مقترحة حاليًا لتقييمها.</p>

@@ -1,4 +1,5 @@
-export type Symbol = "BTC" | "ETH" | "WLD";
+/** A ticker symbol, e.g. "BTC". The tradable set is fetched dynamically — see /api/symbols. */
+export type Symbol = string;
 
 export interface SymbolInfo {
   symbol: Symbol;
@@ -7,7 +8,12 @@ export interface SymbolInfo {
   pair: string;
 }
 
-export const SYMBOLS: SymbolInfo[] = [
+/**
+ * Pinned quick-access defaults, always shown first in the dropdown and kept
+ * in the top-30 list regardless of their current volume ranking. Used as an
+ * immediate fallback before /api/symbols' dynamic list has loaded.
+ */
+export const DEFAULT_SYMBOLS: SymbolInfo[] = [
   { symbol: "BTC", label: "Bitcoin (BTC)", pair: "BTC_USDT" },
   { symbol: "ETH", label: "Ethereum (ETH)", pair: "ETH_USDT" },
   { symbol: "WLD", label: "Worldcoin (WLD)", pair: "WLD_USDT" },
