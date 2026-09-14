@@ -15,6 +15,12 @@ interface CandlestickChartProps {
   zones?: Zone[];
 }
 
+// Matches the app's unified --success / --danger design tokens (globals.css).
+// Chart marks stay at these fixed, saturated values in both themes — the
+// tokens' subtler light/dark variants are for text and badges, not candles.
+const SUCCESS_COLOR = "#22c55e";
+const DANGER_COLOR = "#f04444";
+
 export default function CandlestickChart({ data, zones = [] }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -37,11 +43,11 @@ export default function CandlestickChart({ data, zones = [] }: CandlestickChartP
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: SUCCESS_COLOR,
+      downColor: DANGER_COLOR,
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: SUCCESS_COLOR,
+      wickDownColor: DANGER_COLOR,
     });
 
     series.setData(

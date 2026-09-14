@@ -76,14 +76,14 @@ export default function AnalysisDashboard() {
   );
 
   return (
-    <div className="flex w-full max-w-6xl flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+    <div className="flex w-full max-w-6xl flex-col gap-8">
+      <div className="flex flex-col gap-4 rounded-xl border border-surface-border bg-surface p-5 shadow-sm sm:flex-row">
+        <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           العملة
           <select
             value={symbol}
             onChange={(e) => setSymbol(e.target.value as Symbol)}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-success/40"
           >
             {SYMBOLS.map((s) => (
               <option key={s.symbol} value={s.symbol}>
@@ -93,12 +93,12 @@ export default function AnalysisDashboard() {
           </select>
         </label>
 
-        <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           الفريم الزمني
           <select
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value as Timeframe)}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-success/40"
           >
             {TIMEFRAMES.map((t) => (
               <option key={t.value} value={t.value}>
@@ -109,15 +109,15 @@ export default function AnalysisDashboard() {
         </label>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="h-96 flex-1 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 lg:h-[560px]">
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <div className="h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm lg:h-[560px] lg:flex-1">
           {status === "loading" && (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+            <div className="flex h-full items-center justify-center text-sm text-muted">
               جاري تحميل بيانات {symbol}...
             </div>
           )}
           {status === "error" && (
-            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-500">
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-danger">
               {result?.error}
             </div>
           )}

@@ -20,9 +20,10 @@ interface RectangleCoordinates {
   y2: Coordinate | null;
 }
 
+// Matches SUCCESS_COLOR / DANGER_COLOR in CandlestickChart.tsx.
 const ZONE_COLORS: Record<Zone["type"], { fill: string; border: string }> = {
   demand: { fill: "rgba(34, 197, 94, 0.16)", border: "rgba(34, 197, 94, 0.65)" },
-  supply: { fill: "rgba(239, 68, 68, 0.16)", border: "rgba(239, 68, 68, 0.65)" },
+  supply: { fill: "rgba(240, 68, 68, 0.16)", border: "rgba(240, 68, 68, 0.65)" },
 };
 
 class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
