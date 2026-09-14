@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
+import { detectLiquidityZones } from "@/lib/liquidityZones";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan } from "@/lib/tradePlan";
+import { evaluateTradeOutcome, loadTradeHistory, logTradePlanIfNew, saveTradeHistory } from "@/lib/tradeHistory";
 import type { Candle } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
 import { detectZones } from "@/lib/zones";
@@ -95,6 +97,7 @@ export default function AnalysisDashboard() {
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
 
   const zones = useMemo(() => detectZones(candles), [candles]);
+  const liquidityLevels = useMemo(() => detectLiquidityZones(candles), [candles]);
   const tradePlan = useMemo(
     () => (currentPrice !== null ? buildTradePlan(zones, currentPrice) : null),
     [zones, currentPrice]
@@ -108,6 +111,28 @@ export default function AnalysisDashboard() {
     [candles, zones, currentPrice]
   );
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
+
+  // Track record: log every distinct trade setup we ever propose, and
+  // opportunistically re-check any of this symbol+timeframe's still-open
+  // records against the candles we already have loaded.
+  useEffect(() => {
+    if (tradePlan && confidence) {
+      logTradePlanIfNew(symbol, timeframe, tradePlan, confidence.score);
+    }
+  }, [tradePlan, confidence, symbol, timeframe]);
+
+  useEffect(() => {
+    if (candles.length === 0) return;
+    const history = loadTradeHistory();
+    let changed = false;
+    const updated = history.map((r) => {
+      if (r.resolved || r.symbol !== symbol || r.timeframe !== timeframe) return r;
+      const next = evaluateTradeOutcome(r, candles);
+      if (next !== r) changed = true;
+      return next;
+    });
+    if (changed) saveTradeHistory(updated);
+  }, [candles, symbol, timeframe]);
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
@@ -155,12 +180,15 @@ export default function AnalysisDashboard() {
               {result?.error}
             </div>
           )}
-          {status === "ready" && <CandlestickChart data={candles} zones={zones} />}
+          {status === "ready" && (
+            <CandlestickChart data={candles} zones={zones} liquidityLevels={liquidityLevels} />
+          )}
         </div>
 
         {status === "ready" && currentPrice !== null && (
           <ZonesSidebar
             zones={zones}
+            liquidityLevels={liquidityLevels}
             tradePlan={tradePlan}
             confidence={confidence}
             technicalSummary={technicalSummary}

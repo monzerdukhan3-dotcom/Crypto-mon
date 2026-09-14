@@ -7,12 +7,15 @@ import {
   createChart,
   type UTCTimestamp,
 } from "lightweight-charts";
+import type { LiquidityLevel } from "@/lib/liquidityZones";
 import type { Candle, Zone } from "@/lib/types";
+import { LiquidityLinePrimitive } from "./LiquidityLinePrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
 interface CandlestickChartProps {
   data: Candle[];
   zones?: Zone[];
+  liquidityLevels?: LiquidityLevel[];
 }
 
 // Matches the app's unified --success / --danger design tokens (globals.css).
@@ -21,7 +24,7 @@ interface CandlestickChartProps {
 const SUCCESS_COLOR = "#22c55e";
 const DANGER_COLOR = "#f04444";
 
-export default function CandlestickChart({ data, zones = [] }: CandlestickChartProps) {
+export default function CandlestickChart({ data, zones = [], liquidityLevels = [] }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,21 +63,25 @@ export default function CandlestickChart({ data, zones = [] }: CandlestickChartP
       }))
     );
 
-    const primitives = zones.map((zone) => new ZoneRectanglePrimitive(zone));
-    for (const primitive of primitives) {
+    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone));
+    const liquidityPrimitives = liquidityLevels.map((level) => new LiquidityLinePrimitive(level));
+    for (const primitive of [...zonePrimitives, ...liquidityPrimitives]) {
       series.attachPrimitive(primitive);
     }
 
-    // Zoom to a range that starts a little before the earliest *active* zone
-    // (with a few candles of left margin) instead of the full fetched
-    // history, so zones stay fully visible and readable without forcing the
-    // chart to zoom out over everything we fetched.
-    const activeZoneStarts = zones.filter((z) => z.active).map((z) => z.startTime);
-    if (activeZoneStarts.length > 0 && data.length > 0) {
-      const earliestZoneTime = Math.min(...activeZoneStarts);
-      const zoneStartIndex = data.findIndex((c) => c.time >= earliestZoneTime);
+    // Zoom to a range that starts a little before the earliest thing we drew
+    // (an active zone or an unswept liquidity level) instead of the full
+    // fetched history, so everything stays fully visible and readable
+    // without forcing the chart to zoom out over everything we fetched.
+    const drawnStarts = [
+      ...zones.filter((z) => z.active).map((z) => z.startTime),
+      ...liquidityLevels.map((l) => l.startTime),
+    ];
+    if (drawnStarts.length > 0 && data.length > 0) {
+      const earliestTime = Math.min(...drawnStarts);
+      const startIndex = data.findIndex((c) => c.time >= earliestTime);
       const leftPadding = 3;
-      const fromIndex = Math.max(0, (zoneStartIndex === -1 ? 0 : zoneStartIndex) - leftPadding);
+      const fromIndex = Math.max(0, (startIndex === -1 ? 0 : startIndex) - leftPadding);
       chart.timeScale().setVisibleRange({
         from: data[fromIndex].time as UTCTimestamp,
         to: data[data.length - 1].time as UTCTimestamp,
@@ -95,12 +102,12 @@ export default function CandlestickChart({ data, zones = [] }: CandlestickChartP
 
     return () => {
       resizeObserver.disconnect();
-      for (const primitive of primitives) {
+      for (const primitive of [...zonePrimitives, ...liquidityPrimitives]) {
         series.detachPrimitive(primitive);
       }
       chart.remove();
     };
-  }, [data, zones]);
+  }, [data, zones, liquidityLevels]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

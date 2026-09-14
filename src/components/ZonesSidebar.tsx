@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   CircleCheckBig,
   Crosshair,
+  Droplets,
   Gauge,
   Layers,
   LineChart,
@@ -12,18 +13,25 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
+import type { LiquidityLevel } from "@/lib/liquidityZones";
 import type { TradeConfidence } from "@/lib/tradeConfidence";
 import type { TradePlan, Zone, ZoneStrength } from "@/lib/types";
 import type { VolatilityCheck } from "@/lib/volatility";
 
 interface ZonesSidebarProps {
   zones: Zone[];
+  liquidityLevels: LiquidityLevel[];
   tradePlan: TradePlan | null;
   confidence: TradeConfidence | null;
   technicalSummary: string;
   currentPrice: number;
   volatility: VolatilityCheck | null;
 }
+
+const LIQUIDITY_TYPE_LABEL: Record<LiquidityLevel["type"], string> = {
+  buyside: "قمم متقاربة",
+  sellside: "قيعان متقاربة",
+};
 
 const STRENGTH_LABEL: Record<ZoneStrength, string> = {
   strong: "قوية",
@@ -100,6 +108,7 @@ function confidenceColors(score: number): { text: string; bar: string } {
 
 export default function ZonesSidebar({
   zones,
+  liquidityLevels,
   tradePlan,
   confidence,
   technicalSummary,
@@ -206,6 +215,31 @@ export default function ZonesSidebar({
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STRENGTH_CLASSES[zone.strength]}`}
                 >
                   {STRENGTH_LABEL[zone.strength]}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card icon={Droplets} title={`مناطق السيولة (${liquidityLevels.length})`}>
+        {liquidityLevels.length === 0 ? (
+          <p className="text-sm text-muted">لم يتم رصد قمم أو قيعان متقاربة بعد.</p>
+        ) : (
+          <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
+            {liquidityLevels.map((level) => (
+              <li key={level.id} className="flex items-center justify-between gap-2 text-sm">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    level.type === "sellside" ? "bg-success" : "bg-danger"
+                  }`}
+                  aria-hidden
+                />
+                <span className="flex-1 text-foreground">
+                  {LIQUIDITY_TYPE_LABEL[level.type]} عند {formatPrice(level.price)}
+                </span>
+                <span className="shrink-0 rounded-full bg-surface-border px-2 py-0.5 text-xs font-medium text-muted">
+                  {level.touches} لمسات
                 </span>
               </li>
             ))}
