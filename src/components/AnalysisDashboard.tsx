@@ -1,11 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SYMBOLS, TIMEFRAMES, type Symbol, type Timeframe } from "@/lib/constants";
+import type { Candle } from "@/lib/types";
+import CandlestickChart from "./CandlestickChart";
+
+interface FetchResult {
+  key: string;
+  candles: Candle[];
+  error: string | null;
+}
 
 export default function AnalysisDashboard() {
   const [symbol, setSymbol] = useState<Symbol>("BTC");
   const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  const [result, setResult] = useState<FetchResult | null>(null);
+
+  const requestKey = `${symbol}:${timeframe}`;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`)
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok) {
+          throw new Error(json.error ?? "فشل تحميل البيانات");
+        }
+        return json.candles as Candle[];
+      })
+      .then((candles) => {
+        if (cancelled) return;
+        setResult({ key: requestKey, candles, error: null });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setResult({
+          key: requestKey,
+          candles: [],
+          error: error instanceof Error ? error.message : "فشل تحميل البيانات",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, timeframe, requestKey]);
+
+  const status: "loading" | "ready" | "error" =
+    result?.key !== requestKey ? "loading" : result.error ? "error" : "ready";
 
   return (
     <div className="flex w-full max-w-3xl flex-col gap-6">
@@ -41,8 +84,18 @@ export default function AnalysisDashboard() {
         </label>
       </div>
 
-      <div className="flex h-80 w-full items-center justify-center rounded-lg border border-dashed border-zinc-300 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-        سيتم عرض شارت الشموع هنا لـ {symbol} ({timeframe})
+      <div className="h-96 w-full overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+        {status === "loading" && (
+          <div className="flex h-full items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+            جاري تحميل بيانات {symbol}...
+          </div>
+        )}
+        {status === "error" && (
+          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-red-500">
+            {result?.error}
+          </div>
+        )}
+        {status === "ready" && result && <CandlestickChart data={result.candles} />}
       </div>
     </div>
   );
