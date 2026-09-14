@@ -31,6 +31,11 @@ interface CryptoComCandlestickResponse {
   };
 }
 
+// Default number of candles to fetch. Zone detection needs enough history
+// that older (but still active) supply/demand zones aren't cut off the left
+// edge of the chart; Crypto.com's endpoint accepts up to 300.
+const DEFAULT_CANDLE_COUNT = 200;
+
 /**
  * Fetches real OHLCV candles from Crypto.com Exchange's public market-data
  * API. This is a public endpoint — no API key or signature required, so
@@ -40,7 +45,8 @@ interface CryptoComCandlestickResponse {
  */
 export async function getCandles(
   symbol: Symbol,
-  timeframe: Timeframe
+  timeframe: Timeframe,
+  limit: number = DEFAULT_CANDLE_COUNT
 ): Promise<Candle[]> {
   const info = SYMBOLS.find((s) => s.symbol === symbol);
   if (!info) {
@@ -50,6 +56,7 @@ export async function getCandles(
   const url = new URL(CRYPTO_COM_CANDLESTICK_URL);
   url.searchParams.set("instrument_name", info.pair);
   url.searchParams.set("timeframe", TIMEFRAME_TO_CRYPTO_COM[timeframe]);
+  url.searchParams.set("count", String(limit));
 
   const res = await fetch(url, { next: { revalidate: 30 } });
   if (!res.ok) {

@@ -59,7 +59,23 @@ export default function CandlestickChart({ data, zones = [] }: CandlestickChartP
       series.attachPrimitive(primitive);
     }
 
-    chart.timeScale().fitContent();
+    // Zoom to a range that starts a little before the earliest *active* zone
+    // (with a few candles of left margin) instead of the full fetched
+    // history, so zones stay fully visible and readable without forcing the
+    // chart to zoom out over everything we fetched.
+    const activeZoneStarts = zones.filter((z) => z.active).map((z) => z.startTime);
+    if (activeZoneStarts.length > 0 && data.length > 0) {
+      const earliestZoneTime = Math.min(...activeZoneStarts);
+      const zoneStartIndex = data.findIndex((c) => c.time >= earliestZoneTime);
+      const leftPadding = 3;
+      const fromIndex = Math.max(0, (zoneStartIndex === -1 ? 0 : zoneStartIndex) - leftPadding);
+      chart.timeScale().setVisibleRange({
+        from: data[fromIndex].time as UTCTimestamp,
+        to: data[data.length - 1].time as UTCTimestamp,
+      });
+    } else {
+      chart.timeScale().fitContent();
+    }
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];

@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SYMBOLS, TIMEFRAMES, type Symbol, type Timeframe } from "@/lib/constants";
+import { generateTechnicalSummary } from "@/lib/technicalSummary";
+import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan } from "@/lib/tradePlan";
 import type { Candle } from "@/lib/types";
 import { detectZones } from "@/lib/zones";
@@ -64,6 +66,14 @@ export default function AnalysisDashboard() {
     () => (currentPrice !== null ? buildTradePlan(zones, currentPrice) : null),
     [zones, currentPrice]
   );
+  const confidence = useMemo(
+    () => (tradePlan ? scoreTradeConfidence(tradePlan, zones) : null),
+    [tradePlan, zones]
+  );
+  const technicalSummary = useMemo(
+    () => (currentPrice !== null ? generateTechnicalSummary(candles, zones, currentPrice) : ""),
+    [candles, zones, currentPrice]
+  );
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-6">
@@ -115,7 +125,13 @@ export default function AnalysisDashboard() {
         </div>
 
         {status === "ready" && currentPrice !== null && (
-          <ZonesSidebar zones={zones} tradePlan={tradePlan} currentPrice={currentPrice} />
+          <ZonesSidebar
+            zones={zones}
+            tradePlan={tradePlan}
+            confidence={confidence}
+            technicalSummary={technicalSummary}
+            currentPrice={currentPrice}
+          />
         )}
       </div>
     </div>
