@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
-import { detectLiquidityZones } from "@/lib/liquidityZones";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan } from "@/lib/tradePlan";
@@ -97,8 +96,10 @@ export default function AnalysisDashboard() {
   );
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
 
-  const zones = useMemo(() => detectZones(candles), [candles]);
-  const liquidityLevels = useMemo(() => detectLiquidityZones(candles), [candles]);
+  const zones = useMemo(
+    () => detectZones(candles, { higherTimeframeCandles: dailyCandles }),
+    [candles, dailyCandles]
+  );
   const tradePlan = useMemo(
     () => (currentPrice !== null ? buildTradePlan(zones, currentPrice) : null),
     [zones, currentPrice]
@@ -186,7 +187,7 @@ export default function AnalysisDashboard() {
             </div>
           )}
           {status === "ready" && (
-            <CandlestickChart data={candles} zones={zones} liquidityLevels={liquidityLevels} />
+            <CandlestickChart data={candles} zones={zones} timeframe={timeframe} />
           )}
         </div>
 
@@ -194,7 +195,6 @@ export default function AnalysisDashboard() {
           <ZonesSidebar
             symbol={symbol}
             zones={zones}
-            liquidityLevels={liquidityLevels}
             tradePlan={tradePlan}
             tradeProgress={tradeProgress}
             confidence={confidence}

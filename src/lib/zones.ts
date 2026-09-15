@@ -1,16 +1,15 @@
 import { calculateATR } from "./indicators";
 import { detectSwingPoints } from "./swings";
+import { detectTrendlines, trendlineValueAt, type TrendlineSegment } from "./trendlines";
 import type { Candle, Zone, ZoneStrength, ZoneType } from "./types";
 
 export interface DetectZonesOptions {
   /** Candles on each side a swing point must beat, passed to detectSwingPoints. */
   swingLookback?: number;
-  /** Period for the ATR used throughout (impulse strength, merge/price-distance thresholds). */
+  /** Period for the ATR used throughout (merge/price-distance thresholds). */
   atrPeriod?: number;
   /** How many candles after the base to scan for the impulsive move's extreme. */
   impulseLookahead?: number;
-  /** Minimum impulse size (in ATR units) required for a swing to form a zone at all. */
-  minImpulseAtr?: number;
   /** A candle's range at or below this fraction of ATR counts as a small "base" candle. */
   smallCandleAtrRatio?: number;
   /** Same-type zones whose price ranges are closer than this fraction of ATR are merged into one. */
@@ -23,10 +22,25 @@ export interface DetectZonesOptions {
   minImpulseBodyRatio?: number;
   /** The impulse leg's first candle must have a body-to-range ratio above this (a clean break, not an indecisive wick). */
   minImpulseBodyToWickRatio?: number;
+  /** The impulse move (from the zone's own near edge to its extreme) must be at least this many times the zone's own height. */
+  minImpulseToZoneHeightRatio?: number;
+  /** An opposing zone on the target side closer than this many times this zone's own height gets it rejected (no room to run). */
+  minOpposingZoneDistanceRatio?: number;
+  /** Base candle count above this is capped when building the base outward from the pivot. */
+  maxBaseSize?: number;
+  /** How many "opposing zone was itself validated by..." hops to follow before giving up. */
+  maxValidationDepth?: number;
   /** Strongest N active demand zones to keep. */
   maxDemandZones?: number;
   /** Strongest N active supply zones to keep. */
   maxSupplyZones?: number;
+  /**
+   * Candles from one timeframe up (e.g. daily candles when detecting zones
+   * on the 1h chart), used only for the higher-timeframe confluence check
+   * (condition 10) — a same-direction HTF zone nearby is a bonus, an
+   * opposing one nearby is a penalty. Omit to skip the check.
+   */
+  higherTimeframeCandles?: Candle[] | null;
 }
 
 interface ZoneCandidate {
@@ -37,14 +51,21 @@ interface ZoneCandidate {
   pivotIndex: number;
   /** Time of the first base candle — where the zone's box starts on the chart. */
   startTime: number;
-  /** How many candles made up the consolidation base (1-3). */
+  /** How many candles made up the consolidation base (1-6). */
   baseSize: number;
   impulseMoveAtr: number;
   /** Average body-to-range ratio of the first few impulse candles (0-1); higher = cleaner move. */
   impulseCleanliness: number;
+  /** Average body-to-range ratio of the base candles (0-1); higher = fewer/smaller wicks inside the zone. */
+  baseBodyRatio: number;
   /** Average volume during formation, relative to the dataset's average volume. */
   volumeRatio: number;
 }
+
+// A near-zero body relative to the candle's range — "شمعة دوجي" in the
+// source material, which gets its full high-low range taken as the zone box
+// instead of splitting price/body between wick and body like a normal base.
+const DOJI_BODY_RATIO_THRESHOLD = 0.15;
 
 function bodyToRangeRatio(candle: Candle): number {
   const range = candle.high - candle.low;
@@ -52,32 +73,69 @@ function bodyToRangeRatio(candle: Candle): number {
   return Math.abs(candle.close - candle.open) / range;
 }
 
+function isDoji(candle: Candle): boolean {
+  return bodyToRangeRatio(candle) < DOJI_BODY_RATIO_THRESHOLD;
+}
+
 /**
- * Extends a swing point backward into a 1-3 candle consolidation base, as
+ * Extends a swing point backward into a 1-6 candle consolidation base, as
  * long as neighboring candles stay small relative to ATR — a proper
  * Rally-Base-Drop / Drop-Base-Rally base instead of a single spike reversal.
- * Returns the index of the first (earliest) base candle.
+ * Fewer candles is stronger (condition 3), but up to 6 is still acceptable,
+ * so the cap here is generous; strength scoring is what prefers the
+ * tighter bases. Returns the index of the first (earliest) base candle.
  */
 function buildBaseStartIndex(
   candles: Candle[],
   pivotIndex: number,
   atrValue: number,
-  smallCandleAtrRatio: number
+  smallCandleAtrRatio: number,
+  maxBaseSize: number
 ): number {
   const pivotRange = candles[pivotIndex].high - candles[pivotIndex].low;
   if (pivotRange > atrValue * smallCandleAtrRatio) return pivotIndex;
 
   let startIndex = pivotIndex;
-  for (let j = pivotIndex - 1; j >= Math.max(0, pivotIndex - 2); j--) {
+  const earliestAllowed = Math.max(0, pivotIndex - (maxBaseSize - 1));
+  for (let j = pivotIndex - 1; j >= earliestAllowed; j--) {
     if (candles[j].high - candles[j].low > atrValue * smallCandleAtrRatio) break;
     startIndex = j;
   }
   return startIndex;
 }
 
+/** Computes a zone's top/bottom from its base candles per the price/body rule, with the single-doji exception. */
+function computeZoneBox(baseCandles: Candle[], isDemand: boolean): { top: number; bottom: number } {
+  if (baseCandles.length === 1 && isDoji(baseCandles[0])) {
+    return { top: baseCandles[0].high, bottom: baseCandles[0].low };
+  }
+  const top = isDemand
+    ? Math.max(...baseCandles.map((c) => Math.max(c.open, c.close)))
+    : Math.max(...baseCandles.map((c) => c.high));
+  const bottom = isDemand
+    ? Math.min(...baseCandles.map((c) => c.low))
+    : Math.min(...baseCandles.map((c) => Math.min(c.open, c.close)));
+  return { top, bottom };
+}
+
+/**
+ * Scans forward from the base for a break (a full candle closing decisively
+ * through the zone) and counts distinct retest "visits" — condition 5/6 in
+ * the source material: a touch only counts once price has fully left the
+ * zone again (a candle entirely outside it), not for every candle that
+ * merely overlaps it, so one long consolidation sitting on the edge counts
+ * as one visit rather than a dozen. `hasQuickReturn` is a light read on
+ * condition 7 (a fast, direct return is better than a choppy one): true
+ * when the first confirmed retest arrives within a handful of candles of
+ * the breakout, with no swing reversal in between.
+ */
 function evaluateZoneRange(candles: Candle[], type: ZoneType, top: number, bottom: number, pivotIndex: number) {
   let active = true;
   let testCount = 0;
+  let insideZone = false;
+  let firstVisitStartIndex: number | null = null;
+  let hasQuickReturn = false;
+  let quickReturnChecked = false;
 
   for (let i = pivotIndex + 1; i < candles.length; i++) {
     const c = candles[i];
@@ -86,10 +144,28 @@ function evaluateZoneRange(candles: Candle[], type: ZoneType, top: number, botto
       active = false;
       break;
     }
-    if (c.low <= top && c.high >= bottom) testCount++;
+
+    const overlapsZone = c.low <= top && c.high >= bottom;
+    const fullyOutside = c.low > top || c.high < bottom;
+
+    if (overlapsZone && !insideZone) {
+      insideZone = true;
+      firstVisitStartIndex = i;
+    } else if (insideZone && fullyOutside) {
+      testCount++;
+      if (!quickReturnChecked && firstVisitStartIndex !== null) {
+        // "Quick" here means the price came straight back with no
+        // intervening swing high/low of its own — a direct round trip
+        // rather than a choppy zig-zag on the way back.
+        hasQuickReturn = firstVisitStartIndex - (pivotIndex + 1) <= 3;
+        quickReturnChecked = true;
+      }
+      insideZone = false;
+      firstVisitStartIndex = null;
+    }
   }
 
-  return { active, testCount };
+  return { active, testCount, hasQuickReturn };
 }
 
 function zonesGap(a: ZoneCandidate, b: ZoneCandidate): number {
@@ -106,9 +182,10 @@ function mergeCandidatePair(a: ZoneCandidate, b: ZoneCandidate): ZoneCandidate {
     ...primary,
     top: Math.max(a.top, b.top),
     bottom: Math.min(a.bottom, b.bottom),
-    baseSize: Math.max(a.baseSize, b.baseSize),
+    baseSize: Math.min(a.baseSize, b.baseSize),
     impulseMoveAtr: Math.max(a.impulseMoveAtr, b.impulseMoveAtr),
     impulseCleanliness: Math.max(a.impulseCleanliness, b.impulseCleanliness),
+    baseBodyRatio: Math.max(a.baseBodyRatio, b.baseBodyRatio),
     volumeRatio: Math.max(a.volumeRatio, b.volumeRatio),
   };
 }
@@ -148,7 +225,12 @@ function mergeCloseCandidates(candidates: ZoneCandidate[], threshold: number): Z
   return result;
 }
 
-function scoreZone(candidate: ZoneCandidate, testCount: number): { score: number; strength: ZoneStrength } {
+function scoreZone(
+  candidate: ZoneCandidate,
+  testCount: number,
+  hasQuickReturn: boolean,
+  htfConfluence: "aligned" | "opposing" | "none"
+): { score: number; strength: ZoneStrength } {
   let score = 0;
 
   // Freshness: an untested zone is the strongest signal a zone can have.
@@ -158,26 +240,109 @@ function scoreZone(candidate: ZoneCandidate, testCount: number): { score: number
   if (candidate.impulseMoveAtr >= 3) score += 2;
   else if (candidate.impulseMoveAtr >= 1.5) score += 1;
 
-  if (candidate.baseSize >= 2) score += 1;
+  // Condition 3: fewer base candles is stronger.
+  if (candidate.baseSize <= 3) score += 1;
   if (candidate.impulseCleanliness >= 0.65) score += 1;
+  // Condition 9: a base made mostly of body (small wicks) is cleaner.
+  if (candidate.baseBodyRatio >= 0.6) score += 1;
   // A zone formed on above-average volume had real participation behind it.
   if (candidate.volumeRatio >= 1.3) score += 1;
+  // Condition 7: only relevant once there's been a retest to judge.
+  if (testCount > 0 && hasQuickReturn) score += 1;
+  // Condition 10: higher-timeframe confluence.
+  if (htfConfluence === "aligned") score += 1;
+  if (htfConfluence === "opposing") score -= 1;
 
   const strength: ZoneStrength = score >= 6 ? "strong" : score >= 2 ? "medium" : "weak";
   return { score, strength };
 }
 
+interface RawCandidate extends ZoneCandidate {
+  /** Absolute end of the impulse-lookahead window, for recomputing it later without re-scanning swings. */
+  impulseWindowEnd: number;
+}
+
+function getImpulseWindow(candles: Candle[], candidate: Pick<RawCandidate, "pivotIndex" | "impulseWindowEnd">) {
+  return candles.slice(candidate.pivotIndex + 1, candidate.impulseWindowEnd + 1);
+}
+
+/**
+ * "اثبات المنطقة" — a zone only counts as real if its origin impulse is
+ * validated one of three ways:
+ * 1. The impulse crosses a trendline (major or minor — any 2+ prior same-
+ *    type swings that price hadn't broken before) established before the
+ *    zone formed.
+ * 2. The impulse breaks clean through an earlier opposing zone that was
+ *    itself validated (checked recursively, walking left).
+ * 3. The impulse's extreme sets a new high (demand) or low (supply) versus
+ *    every candle before it in the fetched history — self-validated, no
+ *    further proof needed.
+ * `validatedSoFar` must contain only candidates already confirmed valid,
+ * in chronological order, so the opposing-zone check only ever cites a real
+ * zone rather than a rejected candidate.
+ */
+function isImpulseValidated(
+  candidate: RawCandidate,
+  candles: Candle[],
+  trendlines: TrendlineSegment[],
+  validatedSoFar: RawCandidate[],
+  depth: number,
+  maxDepth: number
+): boolean {
+  const isDemand = candidate.type === "demand";
+  const window = getImpulseWindow(candles, candidate);
+  if (window.length === 0) return false;
+
+  const relevantTrendlineType = isDemand ? "resistance" : "support";
+  const brokeTrendline = window.some((c, offset) => {
+    const absoluteIndex = candidate.pivotIndex + 1 + offset;
+    return trendlines.some((line) => {
+      if (line.type !== relevantTrendlineType) return false;
+      if (line.point2.index > candidate.pivotIndex) return false; // must predate this zone's breakout
+      const projected = trendlineValueAt(line, absoluteIndex);
+      return isDemand ? c.close > projected : c.close < projected;
+    });
+  });
+  if (brokeTrendline) return true;
+
+  const priorExtreme = isDemand
+    ? Math.max(...candles.slice(0, candidate.pivotIndex + 1).map((c) => c.high))
+    : Math.min(...candles.slice(0, candidate.pivotIndex + 1).map((c) => c.low));
+  const impulseExtreme = isDemand ? Math.max(...window.map((c) => c.high)) : Math.min(...window.map((c) => c.low));
+  const setsNewExtreme = isDemand ? impulseExtreme >= priorExtreme : impulseExtreme <= priorExtreme;
+  if (setsNewExtreme) return true;
+
+  if (depth >= maxDepth) return false;
+  const opposingType: ZoneType = isDemand ? "supply" : "demand";
+  const brokenOpposing = validatedSoFar.find((other) => {
+    if (other.type !== opposingType) return false;
+    if (other.pivotIndex >= candidate.pivotIndex) return false;
+    // The impulse must close cleanly through the opposing zone's far edge,
+    // not merely overlap its range.
+    return isDemand ? window.some((c) => c.close > other.top) : window.some((c) => c.close < other.bottom);
+  });
+  if (!brokenOpposing) return false;
+
+  return isImpulseValidated(brokenOpposing, candles, trendlines, validatedSoFar, depth + 1, maxDepth);
+}
+
 /**
  * Detects supply (resistance) and demand (support) zones with a
- * Base-and-Impulse model — scored by freshness, impulse size, base quality,
- * breakout cleanliness, and formation volume — then cleans the result up for
- * practical use:
+ * Base-and-Impulse model, gated by a validation ("اثبات") pass before
+ * anything is scored or drawn, then scored by freshness, impulse size, base
+ * quality, breakout cleanliness, retest behavior, and (optionally)
+ * higher-timeframe confluence:
+ * - a zone whose origin impulse isn't validated (no trendline break, no
+ *   validated opposing zone broken, no new historical extreme) is dropped
+ *   outright — it never gets drawn
  * - broken zones (a full candle closes decisively through them) are dropped
  *   entirely rather than kept around for historical context
  * - near-duplicate zones of the same type (within half an ATR of each
  *   other) are merged into one
  * - zones sitting within half an ATR of the current price are dropped as
  *   impractically close to trade
+ * - a zone with a closer opposing zone on its target side than 2x its own
+ *   height is dropped — no room to run
  * - only the strongest few zones of each type are kept
  */
 export function detectZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
@@ -185,62 +350,61 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     swingLookback = 2,
     atrPeriod = 14,
     impulseLookahead = 10,
-    minImpulseAtr = 1,
     smallCandleAtrRatio = 0.6,
     mergeDistanceAtrRatio = 0.5,
     minDistanceFromPriceAtrRatio = 0.5,
     maxZoneHeightAtrRatio = 2,
     minImpulseBodyRatio = 1.5,
     minImpulseBodyToWickRatio = 0.6,
+    minImpulseToZoneHeightRatio = 2,
+    minOpposingZoneDistanceRatio = 2,
+    maxBaseSize = 6,
+    maxValidationDepth = 6,
     maxDemandZones = 3,
     maxSupplyZones = 2,
+    higherTimeframeCandles = null,
   } = options;
 
   if (candles.length < swingLookback * 2 + 2) return [];
 
   const swings = detectSwingPoints(candles, swingLookback);
+  const trendlines = detectTrendlines(candles, swings);
   const atr = calculateATR(candles, atrPeriod);
   const referenceAtr = [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
 
-  const datasetAvgVolume =
-    candles.reduce((sum, c) => sum + (c.volume ?? 0), 0) / candles.length;
-  const datasetAvgBody =
-    candles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0) / candles.length;
+  const datasetAvgVolume = candles.reduce((sum, c) => sum + (c.volume ?? 0), 0) / candles.length;
+  const datasetAvgBody = candles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0) / candles.length;
 
-  const candidates: ZoneCandidate[] = [];
+  const rawCandidates: RawCandidate[] = [];
 
   for (const swing of swings) {
     const atrValue = atr[swing.index];
     if (!Number.isFinite(atrValue) || atrValue <= 0) continue;
 
-    const baseStartIndex = buildBaseStartIndex(candles, swing.index, atrValue, smallCandleAtrRatio);
+    const baseStartIndex = buildBaseStartIndex(candles, swing.index, atrValue, smallCandleAtrRatio, maxBaseSize);
     const baseCandles = candles.slice(baseStartIndex, swing.index + 1);
     const isDemand = swing.type === "low";
 
-    const top = isDemand
-      ? Math.max(...baseCandles.map((c) => Math.max(c.open, c.close)))
-      : Math.max(...baseCandles.map((c) => c.high));
-    const bottom = isDemand
-      ? Math.min(...baseCandles.map((c) => c.low))
-      : Math.min(...baseCandles.map((c) => Math.min(c.open, c.close)));
+    const { top, bottom } = computeZoneBox(baseCandles, isDemand);
     if (top <= bottom) continue;
     // A base candle with an outlier-sized range (a spike/wick) produces a zone
     // too tall to represent a real, tradable level — reject it outright rather
     // than let it swallow nearby candidates during merging.
-    if (top - bottom > atrValue * maxZoneHeightAtrRatio) continue;
+    if (referenceAtr !== null && top - bottom > referenceAtr * maxZoneHeightAtrRatio) continue;
 
     const windowEnd = Math.min(swing.index + impulseLookahead, candles.length - 1);
     if (windowEnd <= swing.index) continue;
     const window = candles.slice(swing.index + 1, windowEnd + 1);
 
-    const impulseExtreme = isDemand
-      ? Math.max(...window.map((c) => c.high))
-      : Math.min(...window.map((c) => c.low));
-    const impulseMove = isDemand ? impulseExtreme - bottom : top - impulseExtreme;
-    const impulseMoveAtr = impulseMove / atrValue;
-    if (impulseMoveAtr < minImpulseAtr) continue;
+    const zoneHeight = top - bottom;
+    const impulseExtreme = isDemand ? Math.max(...window.map((c) => c.high)) : Math.min(...window.map((c) => c.low));
+    // Condition 1 (slide 5): measured from the zone's own near edge — the
+    // side price actually left from — not from ATR.
+    const impulseMove = isDemand ? impulseExtreme - top : bottom - impulseExtreme;
+    if (impulseMove < zoneHeight * minImpulseToZoneHeightRatio) continue;
+    const impulseMoveAtr = referenceAtr !== null && referenceAtr > 0 ? impulseMove / referenceAtr : 0;
 
-    // Professional Order Block filters — all four must hold:
+    // Professional Order Block filters — all must hold:
     // 1. The breakout candle(s) must be unusually large (real conviction, not drift).
     if (datasetAvgBody > 0) {
       const firstBody = Math.abs(window[0].close - window[0].open);
@@ -259,13 +423,13 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     const cleanlinessSample = window.slice(0, Math.min(3, window.length));
     const impulseCleanliness =
       cleanlinessSample.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / cleanlinessSample.length;
+    const baseBodyRatio = baseCandles.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / baseCandles.length;
 
     const volumeSample = [...baseCandles, ...window.slice(0, Math.min(2, window.length))];
-    const avgFormationVolume =
-      volumeSample.reduce((sum, c) => sum + (c.volume ?? 0), 0) / volumeSample.length;
+    const avgFormationVolume = volumeSample.reduce((sum, c) => sum + (c.volume ?? 0), 0) / volumeSample.length;
     const volumeRatio = datasetAvgVolume > 0 ? avgFormationVolume / datasetAvgVolume : 1;
 
-    candidates.push({
+    rawCandidates.push({
       type: isDemand ? "demand" : "supply",
       top,
       bottom,
@@ -274,19 +438,47 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
       baseSize: swing.index - baseStartIndex + 1,
       impulseMoveAtr,
       impulseCleanliness,
+      baseBodyRatio,
       volumeRatio,
+      impulseWindowEnd: windowEnd,
     });
   }
 
+  // اثبات: validate in formation order so each candidate's opposing-zone
+  // check can only cite zones already confirmed valid.
+  const validated: RawCandidate[] = [];
+  for (const candidate of rawCandidates) {
+    if (isImpulseValidated(candidate, candles, trendlines, validated, 0, maxValidationDepth)) {
+      validated.push(candidate);
+    }
+  }
+
   const mergeThreshold = referenceAtr !== null ? referenceAtr * mergeDistanceAtrRatio : 0;
-  const merged = mergeCloseCandidates(candidates, mergeThreshold);
+  const merged = mergeCloseCandidates(validated, mergeThreshold);
 
   const currentPrice = candles[candles.length - 1].close;
   const minDistanceFromPrice = referenceAtr !== null ? referenceAtr * minDistanceFromPriceAtrRatio : 0;
 
-  const evaluatedZones: Zone[] = [];
+  // Higher-timeframe confluence (condition 10) — one level up only, no
+  // further recursion, and skipped entirely when not provided.
+  const higherTimeframeZones =
+    higherTimeframeCandles && higherTimeframeCandles.length > 0
+      ? detectZones(higherTimeframeCandles, { ...options, higherTimeframeCandles: null })
+      : [];
+
+  function htfConfluenceFor(zone: { type: ZoneType; top: number; bottom: number }): "aligned" | "opposing" | "none" {
+    if (higherTimeframeZones.length === 0 || referenceAtr === null) return "none";
+    const proximity = referenceAtr * 1.5;
+    const nearbyHtf = higherTimeframeZones.find(
+      (h) => h.bottom - proximity <= zone.top && h.top + proximity >= zone.bottom
+    );
+    if (!nearbyHtf) return "none";
+    return nearbyHtf.type === zone.type ? "aligned" : "opposing";
+  }
+
+  const evaluatedZones: (Zone & { pivotIndex: number })[] = [];
   for (const candidate of merged) {
-    const { active, testCount } = evaluateZoneRange(
+    const { active, testCount, hasQuickReturn } = evaluateZoneRange(
       candles,
       candidate.type,
       candidate.top,
@@ -303,10 +495,11 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
           : candidate.bottom - currentPrice;
     if (distanceToPrice < minDistanceFromPrice) continue;
 
-    const { score, strength } = scoreZone(candidate, testCount);
+    const htfConfluence = htfConfluenceFor(candidate);
+    const { score, strength } = scoreZone(candidate, testCount, hasQuickReturn, htfConfluence);
 
     // Narrow, ICT-style Order Block box: just the base candles' own width
-    // (1-3 candles), not extended forward to the present or to a break time.
+    // (1-6 candles), not extended forward to the present or to a break time.
     const narrowEndTime = candles[Math.min(candidate.pivotIndex + 1, candles.length - 1)].time;
 
     evaluatedZones.push({
@@ -321,17 +514,38 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
       impulseMoveAtr: candidate.impulseMoveAtr,
       testCount,
       active,
+      pivotIndex: candidate.pivotIndex,
     });
   }
+
+  // Condition 4: reject a zone if an opposing zone on its target side sits
+  // closer than `minOpposingZoneDistanceRatio` times its own height — no
+  // room left to run before hitting resistance/support.
+  const withRoomToRun = evaluatedZones.filter((zone) => {
+    const zoneHeight = zone.top - zone.bottom;
+    const opposing = evaluatedZones.filter((other) => other.type !== zone.type);
+    const nearestOpposing =
+      zone.type === "demand"
+        ? opposing.filter((o) => o.bottom > zone.top).sort((a, b) => a.bottom - b.bottom)[0]
+        : opposing.filter((o) => o.top < zone.bottom).sort((a, b) => b.top - a.top)[0];
+    if (!nearestOpposing) return true;
+    const distance = zone.type === "demand" ? nearestOpposing.bottom - zone.top : zone.bottom - nearestOpposing.top;
+    return distance >= zoneHeight * minOpposingZoneDistanceRatio;
+  });
 
   const capped: Zone[] = [];
   for (const type of ["demand", "supply"] as const) {
     const max = type === "demand" ? maxDemandZones : maxSupplyZones;
     capped.push(
-      ...evaluatedZones
+      ...withRoomToRun
         .filter((z) => z.type === type)
         .sort((a, b) => b.strengthScore - a.strengthScore || a.testCount - b.testCount)
         .slice(0, max)
+        .map((zone): Zone => {
+          const { pivotIndex, ...rest } = zone;
+          void pivotIndex;
+          return rest;
+        })
     );
   }
 

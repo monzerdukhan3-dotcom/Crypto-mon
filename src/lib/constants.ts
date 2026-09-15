@@ -32,3 +32,10 @@ export const TIMEFRAMES: TimeframeInfo[] = [
   { value: "4h", label: "4 Hours" },
   { value: "1d", label: "1 Day" },
 ];
+
+export const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
+  "15m": 15 * 60,
+  "1h": 60 * 60,
+  "4h": 4 * 60 * 60,
+  "1d": 24 * 60 * 60,
+};

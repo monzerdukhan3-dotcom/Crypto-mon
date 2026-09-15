@@ -1,6 +1,6 @@
 "use client";
 
-import { Eraser, Minus, Ruler, Slash } from "lucide-react";
+import { Eraser, Minus, Ruler, Slash, Timer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -11,17 +11,16 @@ import {
   type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { TIMEFRAME_SECONDS, type Timeframe } from "@/lib/constants";
 import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
-import type { LiquidityLevel } from "@/lib/liquidityZones";
 import type { Candle, Zone } from "@/lib/types";
-import { LiquidityLinePrimitive } from "./LiquidityLinePrimitive";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
 interface CandlestickChartProps {
   data: Candle[];
   zones?: Zone[];
-  liquidityLevels?: LiquidityLevel[];
+  timeframe: Timeframe;
 }
 
 // Matches the app's unified --success / --danger design tokens (globals.css).
@@ -35,7 +34,17 @@ function makeDrawingId(): string {
   return `drawing-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export default function CandlestickChart({ data, zones = [], liquidityLevels = [] }: CandlestickChartProps) {
+function formatCountdown(seconds: number): string {
+  const clamped = Math.max(0, seconds);
+  const h = Math.floor(clamped / 3600);
+  const m = Math.floor((clamped % 3600) / 60);
+  const s = Math.floor(clamped % 60);
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+export default function CandlestickChart({ data, zones = [], timeframe }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
@@ -47,12 +56,28 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
   // below to unsubscribe/resubscribe between those two clicks — a window
   // in which a fast second click can be dropped entirely.
   const pendingPointRef = useRef<{ time: number; price: number } | null>(null);
+  const [secondsToClose, setSecondsToClose] = useState<number | null>(null);
 
   const periodChangePct =
     data.length > 1 && data[0].close > 0 ? ((data[data.length - 1].close - data[0].close) / data[0].close) * 100 : 0;
 
-  // Chart + candles + automated zone/liquidity overlays. Only rebuilt when
-  // the underlying data actually changes, so drawing a line doesn't reset
+  // Countdown to the current (last) candle's close, ticking every second.
+  useEffect(() => {
+    function tick() {
+      if (data.length === 0) {
+        setSecondsToClose(null);
+        return;
+      }
+      const closeTime = (data[data.length - 1].time + TIMEFRAME_SECONDS[timeframe]) * 1000;
+      setSecondsToClose(Math.max(0, Math.round((closeTime - Date.now()) / 1000)));
+    }
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [data, timeframe]);
+
+  // Chart + candles + automated zone overlays. Only rebuilt when the
+  // underlying data actually changes, so drawing a line doesn't reset
   // zoom/pan.
   useEffect(() => {
     const container = containerRef.current;
@@ -94,19 +119,14 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
 
     const lastCandleTime = data.length > 0 ? data[data.length - 1].time : 0;
     const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone, lastCandleTime));
-    const liquidityPrimitives = liquidityLevels.map((level) => new LiquidityLinePrimitive(level));
-    for (const primitive of [...zonePrimitives, ...liquidityPrimitives]) {
+    for (const primitive of zonePrimitives) {
       series.attachPrimitive(primitive);
     }
 
-    // Zoom to a range that starts a little before the earliest thing we drew
-    // (an active zone or an unswept liquidity level) instead of the full
-    // fetched history, so everything stays fully visible and readable
-    // without forcing the chart to zoom out over everything we fetched.
-    const drawnStarts = [
-      ...zones.filter((z) => z.active).map((z) => z.startTime),
-      ...liquidityLevels.map((l) => l.startTime),
-    ];
+    // Zoom to a range that starts a little before the earliest active zone
+    // instead of the full fetched history, so everything stays fully
+    // visible and readable without zooming out over everything we fetched.
+    const drawnStarts = zones.filter((z) => z.active).map((z) => z.startTime);
     if (drawnStarts.length > 0 && data.length > 0) {
       const earliestTime = Math.min(...drawnStarts);
       const startIndex = data.findIndex((c) => c.time >= earliestTime);
@@ -132,14 +152,14 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
 
     return () => {
       resizeObserver.disconnect();
-      for (const primitive of [...zonePrimitives, ...liquidityPrimitives]) {
+      for (const primitive of zonePrimitives) {
         series.detachPrimitive(primitive);
       }
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [data, zones, liquidityLevels]);
+  }, [data, zones]);
 
   // User-drawn lines + click handling (placing points, and click-to-delete
   // in idle mode). Kept separate from the effect above so drawing a line
@@ -236,13 +256,21 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      <div
-        className={`pointer-events-none absolute left-3 top-3 z-10 rounded-md px-2 py-1 text-xs font-semibold ${
-          periodChangePct >= 0 ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
-        }`}
-      >
-        {periodChangePct >= 0 ? "+" : ""}
-        {periodChangePct.toFixed(2)}%
+      <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-1.5">
+        <span
+          className={`rounded-md px-2 py-1 text-xs font-semibold ${
+            periodChangePct >= 0 ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
+          }`}
+        >
+          {periodChangePct >= 0 ? "+" : ""}
+          {periodChangePct.toFixed(2)}%
+        </span>
+        {secondsToClose !== null && (
+          <span className="flex items-center gap-1 rounded-md border border-surface-border bg-surface/90 px-2 py-1 text-xs font-medium text-muted backdrop-blur">
+            <Timer className="h-3 w-3" strokeWidth={2.25} />
+            {formatCountdown(secondsToClose)}
+          </span>
+        )}
       </div>
 
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">

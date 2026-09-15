@@ -14,8 +14,8 @@ import type {
 import type { Drawing } from "@/lib/drawingTypes";
 import { formatPrice } from "@/lib/format";
 
-// A neutral accent distinct from the success/danger zone & liquidity colors,
-// since these are user-drawn annotations rather than automated signals.
+// A neutral accent distinct from the success/danger zone colors, since
+// these are user-drawn annotations rather than automated signals.
 const DRAWING_COLOR = "#3b82f6";
 // The measuring tool reads as a distinct, temporary overlay rather than a
 // support/resistance line, so it gets its own accent (matches --color-warning).
