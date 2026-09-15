@@ -149,7 +149,8 @@ export default function AnalysisDashboard() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
-      <div className="flex flex-col gap-4 rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row">
+      <div className="relative flex flex-col gap-4 overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row">
+        <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           العملة
           <select
@@ -181,13 +182,14 @@ export default function AnalysisDashboard() {
         </label>
       </div>
 
-      <p className="text-xs leading-relaxed text-muted">
+      <p className="rounded-lg border border-surface-border bg-surface/60 px-4 py-2.5 text-xs leading-relaxed text-muted">
         القائمة تضم أعلى 40 عملة سيولة وحجم تداول على المنصة، مع استبعاد اجتهادي لعملات القمار والميمز الصرفة —
         هذا اجتهاد تقني وليس فتوى شرعية معتمدة؛ راجع مصدرًا موثوقًا قبل الاعتماد عليه في قرار الاستثمار.
       </p>
 
       <div className="flex flex-col gap-5 lg:flex-row">
-        <div className="h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm transition-shadow duration-200 hover:shadow-md lg:h-[560px] lg:flex-1">
+        <div className="relative h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm transition-shadow duration-200 hover:shadow-md lg:h-[560px] lg:flex-1">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 bg-gradient-to-r from-info via-success to-info" />
           {status === "loading" && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted">
               <Loader2 className="h-5 w-5 animate-spin text-success" strokeWidth={2.25} />

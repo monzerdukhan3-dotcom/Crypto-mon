@@ -87,9 +87,10 @@ function Row({
 
 function Card({ icon: Icon, title, children }: { icon: typeof Target; title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
+    <div className="group relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-info/30 hover:shadow-md">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-0.5 scale-x-0 bg-gradient-to-r from-info via-success to-info transition-transform duration-300 group-hover:scale-x-100" />
       <h2 className="mb-4 flex items-center gap-2 font-semibold text-foreground">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-background text-muted">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-info-soft text-info">
           <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
         </span>
         {title}
@@ -286,8 +287,8 @@ export default function ZonesSidebar({
             {activeZones.map((zone) => (
               <li
                 key={zone.id}
-                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-sm ${
-                  zone.id === approachingZone?.id ? "bg-info-soft" : ""
+                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-sm transition-colors duration-150 hover:bg-background ${
+                  zone.id === approachingZone?.id ? "bg-info-soft hover:bg-info-soft" : ""
                 }`}
               >
                 <span
