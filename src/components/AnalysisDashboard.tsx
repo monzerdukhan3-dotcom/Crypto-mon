@@ -6,6 +6,7 @@ import { detectLiquidityZones } from "@/lib/liquidityZones";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan } from "@/lib/tradePlan";
+import { computeTradeProgress } from "@/lib/tradeProgress";
 import { evaluateTradeOutcome, loadTradeHistory, logTradePlanIfNew, saveTradeHistory } from "@/lib/tradeHistory";
 import type { Candle } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
@@ -111,6 +112,10 @@ export default function AnalysisDashboard() {
     [candles, zones, currentPrice]
   );
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
+  const tradeProgress = useMemo(
+    () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice) : null),
+    [tradePlan, currentPrice]
+  );
 
   // Track record: log every distinct trade setup we ever propose, and
   // opportunistically re-check any of this symbol+timeframe's still-open
@@ -187,9 +192,11 @@ export default function AnalysisDashboard() {
 
         {status === "ready" && currentPrice !== null && (
           <ZonesSidebar
+            symbol={symbol}
             zones={zones}
             liquidityLevels={liquidityLevels}
             tradePlan={tradePlan}
+            tradeProgress={tradeProgress}
             confidence={confidence}
             technicalSummary={technicalSummary}
             currentPrice={currentPrice}

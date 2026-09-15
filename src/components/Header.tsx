@@ -1,4 +1,4 @@
-import { ChartCandlestick, History } from "lucide-react";
+import { ChartCandlestick, History, Settings } from "lucide-react";
 import Link from "next/link";
 
 export default function Header() {
@@ -12,13 +12,22 @@ export default function Header() {
           <span className="text-lg font-bold tracking-tight">Crypto-mon</span>
         </Link>
 
-        <Link
-          href="/history"
-          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
-        >
-          <History className="h-4 w-4" strokeWidth={2.25} />
-          سجل الصفقات
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/history"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
+          >
+            <History className="h-4 w-4" strokeWidth={2.25} />
+            سجل الصفقات
+          </Link>
+          <Link
+            href="/admin"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
+          >
+            <Settings className="h-4 w-4" strokeWidth={2.25} />
+            الإعدادات
+          </Link>
+        </div>
       </div>
     </header>
   );

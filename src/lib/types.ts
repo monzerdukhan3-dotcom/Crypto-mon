@@ -25,15 +25,15 @@ export interface Zone {
   type: ZoneType;
   top: number;
   bottom: number;
-  /** Time of the base candle the zone was formed from. */
+  /** Time of the first base candle — the zone box's left edge. */
   startTime: number;
   /**
-   * Time the zone's box should extend to: the last known candle's time while
-   * the zone is still active, or the time it was invalidated.
+   * Time the zone's box extends to. Narrow by design (ICT/SMC Order Block
+   * style): just past the base's last candle, not extended to the present.
    */
   endTime: number;
   strength: ZoneStrength;
-  /** 0-4 score the strength label is derived from. */
+  /** 0-8 score the strength label is derived from. */
   strengthScore: number;
   /** Size of the impulsive move that formed the zone, in ATR units. */
   impulseMoveAtr: number;

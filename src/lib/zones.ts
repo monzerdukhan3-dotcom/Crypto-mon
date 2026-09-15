@@ -19,6 +19,10 @@ export interface DetectZonesOptions {
   minDistanceFromPriceAtrRatio?: number;
   /** A candidate taller than this many ATRs is rejected outright (an outlier candle, not a tradable zone). */
   maxZoneHeightAtrRatio?: number;
+  /** The impulse leg's first 1-2 candles must have a body at least this many times the dataset's average body. */
+  minImpulseBodyRatio?: number;
+  /** The impulse leg's first candle must have a body-to-range ratio above this (a clean break, not an indecisive wick). */
+  minImpulseBodyToWickRatio?: number;
   /** Strongest N active demand zones to keep. */
   maxDemandZones?: number;
   /** Strongest N active supply zones to keep. */
@@ -74,20 +78,18 @@ function buildBaseStartIndex(
 function evaluateZoneRange(candles: Candle[], type: ZoneType, top: number, bottom: number, pivotIndex: number) {
   let active = true;
   let testCount = 0;
-  let endTime = candles[candles.length - 1].time;
 
   for (let i = pivotIndex + 1; i < candles.length; i++) {
     const c = candles[i];
     const brokenThrough = type === "demand" ? c.close < bottom : c.close > top;
     if (brokenThrough) {
       active = false;
-      endTime = c.time;
       break;
     }
     if (c.low <= top && c.high >= bottom) testCount++;
   }
 
-  return { active, testCount, endTime };
+  return { active, testCount };
 }
 
 function zonesGap(a: ZoneCandidate, b: ZoneCandidate): number {
@@ -188,6 +190,8 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     mergeDistanceAtrRatio = 0.5,
     minDistanceFromPriceAtrRatio = 0.5,
     maxZoneHeightAtrRatio = 2,
+    minImpulseBodyRatio = 1.5,
+    minImpulseBodyToWickRatio = 0.6,
     maxDemandZones = 3,
     maxSupplyZones = 2,
   } = options;
@@ -200,6 +204,8 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
 
   const datasetAvgVolume =
     candles.reduce((sum, c) => sum + (c.volume ?? 0), 0) / candles.length;
+  const datasetAvgBody =
+    candles.reduce((sum, c) => sum + Math.abs(c.close - c.open), 0) / candles.length;
 
   const candidates: ZoneCandidate[] = [];
 
@@ -234,6 +240,22 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     const impulseMoveAtr = impulseMove / atrValue;
     if (impulseMoveAtr < minImpulseAtr) continue;
 
+    // Professional Order Block filters — all four must hold:
+    // 1. The breakout candle(s) must be unusually large (real conviction, not drift).
+    if (datasetAvgBody > 0) {
+      const firstBody = Math.abs(window[0].close - window[0].open);
+      const firstTwoBody =
+        window.length >= 2 ? firstBody + Math.abs(window[1].close - window[1].open) : firstBody;
+      const hasStrongImpulseCandle =
+        firstBody > datasetAvgBody * minImpulseBodyRatio || firstTwoBody > datasetAvgBody * minImpulseBodyRatio;
+      if (!hasStrongImpulseCandle) continue;
+    }
+    // 2. The break must be a close beyond the base, not just a wick poking through.
+    const closesBeyondBase = isDemand ? window.some((c) => c.close > top) : window.some((c) => c.close < bottom);
+    if (!closesBeyondBase) continue;
+    // 3. The breakout candle itself must be clean (mostly body, not mostly wick).
+    if (bodyToRangeRatio(window[0]) <= minImpulseBodyToWickRatio) continue;
+
     const cleanlinessSample = window.slice(0, Math.min(3, window.length));
     const impulseCleanliness =
       cleanlinessSample.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / cleanlinessSample.length;
@@ -264,7 +286,7 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
 
   const evaluatedZones: Zone[] = [];
   for (const candidate of merged) {
-    const { active, testCount, endTime } = evaluateZoneRange(
+    const { active, testCount } = evaluateZoneRange(
       candles,
       candidate.type,
       candidate.top,
@@ -283,13 +305,17 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
 
     const { score, strength } = scoreZone(candidate, testCount);
 
+    // Narrow, ICT-style Order Block box: just the base candles' own width
+    // (1-3 candles), not extended forward to the present or to a break time.
+    const narrowEndTime = candles[Math.min(candidate.pivotIndex + 1, candles.length - 1)].time;
+
     evaluatedZones.push({
       id: `${candidate.type}-${candidate.startTime}`,
       type: candidate.type,
       top: candidate.top,
       bottom: candidate.bottom,
       startTime: candidate.startTime,
-      endTime,
+      endTime: narrowEndTime,
       strength,
       strengthScore: score,
       impulseMoveAtr: candidate.impulseMoveAtr,

@@ -1,9 +1,13 @@
+"use client";
+
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
   CircleCheckBig,
   Crosshair,
   Droplets,
+  ExternalLink,
   Gauge,
   Layers,
   LineChart,
@@ -11,17 +15,22 @@ import {
   Shield,
   Target,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import Link from "next/link";
+import { useMemo, type ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
+import { getFundamentalNote } from "@/lib/fundamentalNotes";
 import type { LiquidityLevel } from "@/lib/liquidityZones";
 import type { TradeConfidence } from "@/lib/tradeConfidence";
+import type { TradeProgress } from "@/lib/tradeProgress";
 import type { TradePlan, Zone, ZoneStrength } from "@/lib/types";
 import type { VolatilityCheck } from "@/lib/volatility";
 
 interface ZonesSidebarProps {
+  symbol: string;
   zones: Zone[];
   liquidityLevels: LiquidityLevel[];
   tradePlan: TradePlan | null;
+  tradeProgress: TradeProgress | null;
   confidence: TradeConfidence | null;
   technicalSummary: string;
   currentPrice: number;
@@ -46,7 +55,19 @@ const STRENGTH_CLASSES: Record<ZoneStrength, string> = {
 };
 
 const FUNDAMENTAL_PLACEHOLDER =
-  "يحتاج هذا القسم ربط مصدر أخبار خارجي لاحقًا (مثل بيانات FOMC، مؤشر CPI، أو تدفقات صناديق ETF) لعرض تحليل أساسي حي، وينطبق نفس الأمر على فلتر مسافة الأمان من الأخبار (يحتاج ربط تقويم اقتصادي خارجي) — هذه البيانات غير متوفرة حاليًا داخل المشروع.";
+  "لا توجد ملاحظة تحليل أساسي محفوظة لهذه العملة بعد. الأخبار الحية تحتاج مصدر خارجي (مثل CryptoPanic أو NewsAPI) غير متوفر حاليًا في المشروع — يمكنك كتابة ملاحظة يدوية من صفحة الإعدادات.";
+
+const TRADE_PROGRESS_STATUS_LABEL: Record<TradeProgress["status"], string> = {
+  profit: "في الربح",
+  loss: "في الخسارة",
+  at_entry: "عند نقطة الدخول",
+};
+
+const TRADE_PROGRESS_STATUS_CLASSES: Record<TradeProgress["status"], string> = {
+  profit: "text-success",
+  loss: "text-danger",
+  at_entry: "text-muted",
+};
 
 function Row({
   icon: Icon,
@@ -106,15 +127,26 @@ function confidenceColors(score: number): { text: string; bar: string } {
   return { text: "text-danger", bar: "bg-danger" };
 }
 
+function formatDate(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString("ar", { dateStyle: "medium", timeStyle: "short" });
+}
+
 export default function ZonesSidebar({
+  symbol,
   zones,
   liquidityLevels,
   tradePlan,
+  tradeProgress,
   confidence,
   technicalSummary,
   currentPrice,
   volatility,
 }: ZonesSidebarProps) {
+  // ZonesSidebar only ever renders client-side (after AnalysisDashboard's
+  // fetch resolves), so reading localStorage directly at render time here
+  // carries no SSR-hydration-mismatch risk.
+  const note = useMemo(() => getFundamentalNote(symbol), [symbol]);
+
   const activeZones = zones
     .filter((z) => z.active)
     .sort((a, b) => Math.abs(a.top - currentPrice) - Math.abs(b.top - currentPrice))
@@ -155,6 +187,35 @@ export default function ZonesSidebar({
         </div>
       </Card>
 
+      {tradePlan && tradeProgress && (
+        <Card icon={Activity} title="تتبع الصفقة">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-baseline justify-between">
+              <span className={`text-lg font-bold ${TRADE_PROGRESS_STATUS_CLASSES[tradeProgress.status]}`}>
+                {TRADE_PROGRESS_STATUS_LABEL[tradeProgress.status]}
+              </span>
+              <span className={`text-sm font-medium ${TRADE_PROGRESS_STATUS_CLASSES[tradeProgress.status]}`}>
+                {tradeProgress.priceDiff >= 0 ? "+" : ""}
+                {formatPrice(tradeProgress.priceDiff)} ({tradeProgress.priceDiffPct >= 0 ? "+" : ""}
+                {tradeProgress.priceDiffPct.toFixed(2)}%)
+              </span>
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+                <span>الاقتراب من {tradeProgress.nearestLevel === "target1" ? "الهدف 1" : "وقف الخسارة"}</span>
+                <span>{tradeProgress.proximityPct.toFixed(0)}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-surface-border">
+                <div
+                  className={`h-full rounded-full ${tradeProgress.nearestLevel === "target1" ? "bg-success" : "bg-danger"}`}
+                  style={{ width: `${tradeProgress.proximityPct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card icon={Gauge} title="قوة الصفقة">
         {confidence ? (
           <div className="flex flex-col gap-3">
@@ -191,7 +252,14 @@ export default function ZonesSidebar({
       </Card>
 
       <Card icon={Newspaper} title="التحليل الأساسي">
-        <p className="text-sm leading-relaxed text-muted">{FUNDAMENTAL_PLACEHOLDER}</p>
+        <p className="text-sm leading-relaxed text-foreground">{note?.text || FUNDAMENTAL_PLACEHOLDER}</p>
+        <div className="mt-3 flex items-center justify-between text-xs text-muted">
+          <span>{note ? `آخر تحديث: ${formatDate(note.updatedAt)}` : ""}</span>
+          <Link href="/admin" className="flex items-center gap-1 text-success hover:underline">
+            تحرير
+            <ExternalLink className="h-3 w-3" strokeWidth={2.25} />
+          </Link>
+        </div>
       </Card>
 
       <Card icon={Layers} title={`المناطق النشطة (${activeZones.length})`}>
