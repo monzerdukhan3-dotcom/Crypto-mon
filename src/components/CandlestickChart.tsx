@@ -125,8 +125,7 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
       }))
     );
 
-    const lastCandleTime = data.length > 0 ? data[data.length - 1].time : 0;
-    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone, lastCandleTime));
+    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone));
     for (const primitive of zonePrimitives) {
       series.attachPrimitive(primitive);
     }

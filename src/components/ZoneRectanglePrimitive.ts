@@ -16,7 +16,6 @@ import type { Zone } from "@/lib/types";
 interface RectangleCoordinates {
   x1: Coordinate | null;
   x2: Coordinate | null;
-  xEnd: Coordinate | null;
   y1: Coordinate | null;
   y2: Coordinate | null;
 }
@@ -34,7 +33,7 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
   ) {}
 
   draw(target: CanvasRenderingTarget2D) {
-    const { x1, x2, xEnd, y1, y2 } = this.coords;
+    const { x1, x2, y1, y2 } = this.coords;
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
 
     target.useBitmapCoordinateSpace((scope) => {
@@ -47,13 +46,15 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
 
       // The true origin box is only the 1-6 base candles wide (ICT/SMC
       // style) — a handful of pixels once zoomed out, easy to miss
-      // entirely. A light fill across the *whole* band out to the present
-      // keeps the level unmistakably visible on the chart, while the
-      // origin box itself still gets a visibly stronger fill and border so
-      // the precise Order Block is still there to read.
-      if (xEnd !== null && xEnd > right) {
+      // entirely. A light fill across the *whole* band out to the right
+      // edge of the pane (not just to the last candle — all the way to
+      // the visible edge, panned/zoomed or not) keeps the level
+      // unmistakably visible, while the origin box itself still gets a
+      // visibly stronger fill and border so the precise Order Block is
+      // still there to read.
+      if (scope.bitmapSize.width > right) {
         ctx.fillStyle = colors.band;
-        ctx.fillRect(right, top, xEnd * scope.horizontalPixelRatio - right, bottom - top);
+        ctx.fillRect(right, top, scope.bitmapSize.width - right, bottom - top);
       }
 
       ctx.fillStyle = colors.fill;
@@ -66,19 +67,18 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
 }
 
 class ZoneRectanglePaneView implements IPrimitivePaneView {
-  private coords: RectangleCoordinates = { x1: null, x2: null, xEnd: null, y1: null, y2: null };
+  private coords: RectangleCoordinates = { x1: null, x2: null, y1: null, y2: null };
 
   constructor(private readonly source: ZoneRectanglePrimitive) {}
 
   update() {
-    const { chart, series, zone, guideEndTime } = this.source;
+    const { chart, series, zone } = this.source;
     if (!chart || !series) return;
 
     const timeScale = chart.timeScale();
     this.coords = {
       x1: timeScale.timeToCoordinate(zone.startTime as UTCTimestamp),
       x2: timeScale.timeToCoordinate(zone.endTime as UTCTimestamp),
-      xEnd: timeScale.timeToCoordinate(guideEndTime as UTCTimestamp),
       y1: series.priceToCoordinate(zone.top),
       y2: series.priceToCoordinate(zone.bottom),
     };
@@ -95,11 +95,7 @@ export class ZoneRectanglePrimitive implements ISeriesPrimitive<Time> {
   series: ISeriesApi<SeriesType> | null = null;
   private readonly paneView: ZoneRectanglePaneView;
 
-  /** @param guideEndTime Time (usually the last candle) the dashed guide lines reach toward. */
-  constructor(
-    public readonly zone: Zone,
-    public readonly guideEndTime: number
-  ) {
+  constructor(public readonly zone: Zone) {
     this.paneView = new ZoneRectanglePaneView(this);
   }
 
