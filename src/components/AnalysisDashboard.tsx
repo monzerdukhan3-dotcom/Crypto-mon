@@ -187,7 +187,7 @@ export default function AnalysisDashboard() {
             </div>
           )}
           {status === "ready" && (
-            <CandlestickChart data={candles} zones={zones} timeframe={timeframe} />
+            <CandlestickChart data={candles} zones={zones} tradePlan={tradePlan} timeframe={timeframe} />
           )}
         </div>
 

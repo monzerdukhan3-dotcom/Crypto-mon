@@ -6,22 +6,30 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  LineStyle,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { TIMEFRAME_SECONDS, type Timeframe } from "@/lib/constants";
 import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
-import type { Candle, Zone } from "@/lib/types";
+import type { Candle, TradePlan, Zone } from "@/lib/types";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
 interface CandlestickChartProps {
   data: Candle[];
   zones?: Zone[];
+  tradePlan?: TradePlan | null;
   timeframe: Timeframe;
 }
+
+// Matches --color-danger / --color-success (see design tokens).
+const ENTRY_LINE_COLOR = "#71717a";
+const STOP_LINE_COLOR = "#f04444";
+const TARGET_LINE_COLOR = "#22c55e";
 
 // Matches the app's unified --success / --danger design tokens (globals.css).
 // Chart marks stay at these fixed, saturated values in both themes — the
@@ -44,7 +52,7 @@ function formatCountdown(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export default function CandlestickChart({ data, zones = [], timeframe }: CandlestickChartProps) {
+export default function CandlestickChart({ data, zones = [], tradePlan = null, timeframe }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
@@ -161,14 +169,62 @@ export default function CandlestickChart({ data, zones = [], timeframe }: Candle
     };
   }, [data, zones]);
 
+  // Entry / stop-loss / target price lines for the active trade plan, using
+  // lightweight-charts' own built-in price lines (not a custom primitive —
+  // simpler and doesn't need repainting logic of its own). Reads
+  // seriesRef.current fresh rather than depending on the effect above
+  // having already run in this exact commit, and depends on `data` too so
+  // it re-attaches after that effect rebuilds the series.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !tradePlan) return;
+
+    const lines: IPriceLine[] = [
+      series.createPriceLine({
+        price: tradePlan.entry,
+        color: ENTRY_LINE_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "دخول",
+      }),
+      series.createPriceLine({
+        price: tradePlan.stopLoss,
+        color: STOP_LINE_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "وقف الخسارة",
+      }),
+      ...tradePlan.targets.map((target, i) =>
+        series.createPriceLine({
+          price: target,
+          color: TARGET_LINE_COLOR,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: `هدف ${i + 1}`,
+        })
+      ),
+    ];
+
+    return () => {
+      for (const line of lines) series.removePriceLine(line);
+    };
+  }, [tradePlan, data]);
+
   // User-drawn lines + click handling (placing points, and click-to-delete
   // in idle mode). Kept separate from the effect above so drawing a line
   // never tears down and rebuilds the chart.
   useEffect(() => {
-    const chart = chartRef.current;
-    const series = seriesRef.current;
     const container = containerRef.current;
-    if (!chart || !series || !container) return;
+    // chart/series come from the refs at click time (below), not captured
+    // here — if the effect above ever rebuilds the chart (data/zones
+    // change) while this effect hasn't re-run, a value captured once at
+    // setup time would keep pointing at the destroyed chart/series
+    // instance, and every click would silently no-op.
+    const series = seriesRef.current;
+    if (!container || !series) return;
 
     const primitives = drawings.map((d) => new ManualDrawingPrimitive(d));
     for (const primitive of primitives) series.attachPrimitive(primitive);
@@ -176,10 +232,12 @@ export default function CandlestickChart({ data, zones = [], timeframe }: Candle
     // freshly drawn line can miss a frame. applyOptions() with no actual
     // change still runs the chart's full invalidate+redraw pipeline
     // synchronously, guaranteeing the new primitive paints immediately.
-    chart.applyOptions({});
+    chartRef.current?.applyOptions({});
 
     function handlePoint(x: number, y: number) {
-      if (!series || !chart) return;
+      const chart = chartRef.current;
+      const series = seriesRef.current;
+      if (!chart || !series) return;
 
       if (drawingTool === "horizontal") {
         const price = series.coordinateToPrice(y);
