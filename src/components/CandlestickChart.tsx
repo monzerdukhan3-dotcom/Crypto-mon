@@ -6,17 +6,17 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
-  LineStyle,
   type IChartApi,
-  type IPriceLine,
   type ISeriesApi,
   type SeriesType,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { TIMEFRAME_SECONDS, type Timeframe } from "@/lib/constants";
 import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
+import { computeTradePlanLineSpan } from "@/lib/tradePlan";
 import type { Candle, TradePlan, Zone } from "@/lib/types";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
+import { TradePlanLinePrimitive } from "./TradePlanLinePrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
 interface CandlestickChartProps {
@@ -168,47 +168,37 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
     };
   }, [data, zones]);
 
-  // Entry / stop-loss / target price lines for the active trade plan, using
-  // lightweight-charts' own built-in price lines (not a custom primitive —
-  // simpler and doesn't need repainting logic of its own). Reads
+  // Entry / stop-loss / target lines for the active trade plan — bounded
+  // segments (not lightweight-charts' full-width price lines): they start
+  // at the entry zone's own origin and end the moment price first reaches
+  // the stop loss or any target, or "now" if nothing's been hit yet. Reads
   // seriesRef.current fresh rather than depending on the effect above
   // having already run in this exact commit, and depends on `data` too so
   // it re-attaches after that effect rebuilds the series.
   useEffect(() => {
     const series = seriesRef.current;
-    if (!series || !tradePlan) return;
+    if (!series || !tradePlan || data.length === 0) return;
 
-    const lines: IPriceLine[] = [
-      series.createPriceLine({
-        price: tradePlan.entry,
-        color: ENTRY_LINE_COLOR,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: "دخول",
-      }),
-      series.createPriceLine({
+    const { startTime, endTime } = computeTradePlanLineSpan(tradePlan, data);
+    const primitives = [
+      new TradePlanLinePrimitive({ price: tradePlan.entry, color: ENTRY_LINE_COLOR, title: "دخول", startTime, endTime }),
+      new TradePlanLinePrimitive({
         price: tradePlan.stopLoss,
         color: STOP_LINE_COLOR,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
         title: "وقف الخسارة",
+        startTime,
+        endTime,
       }),
-      ...tradePlan.targets.map((target, i) =>
-        series.createPriceLine({
-          price: target,
-          color: TARGET_LINE_COLOR,
-          lineWidth: 1,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: `هدف ${i + 1}`,
-        })
+      ...tradePlan.targets.map(
+        (target, i) =>
+          new TradePlanLinePrimitive({ price: target, color: TARGET_LINE_COLOR, title: `هدف ${i + 1}`, startTime, endTime })
       ),
     ];
+    for (const primitive of primitives) series.attachPrimitive(primitive);
+    chartRef.current?.applyOptions({});
 
     return () => {
-      for (const line of lines) series.removePriceLine(line);
+      for (const primitive of primitives) series.detachPrimitive(primitive);
     };
   }, [tradePlan, data]);
 

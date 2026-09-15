@@ -1,4 +1,4 @@
-import type { TradePlan, Zone } from "./types";
+import type { Candle, TradePlan, Zone } from "./types";
 
 export interface BuildTradePlanOptions {
   /** Extra room below the zone for the stop loss, as a fraction of zone height. */
@@ -56,4 +56,29 @@ export function buildTradePlan(
   if (riskRewardRatios[0] < minFirstTargetRR) return null;
 
   return { zone: nearest, entry, stopLoss, targets, riskAmount, riskRewardRatios };
+}
+
+/**
+ * The time span a trade plan's entry/stop/target lines should be drawn
+ * over: starting at the zone's own origin (its narrow box's end — where the
+ * entry level was actually established) and ending the moment price first
+ * reaches the stop loss or any target, whichever comes first — the same
+ * "worst case first" convention tradeHistory.ts uses to resolve a trade.
+ * Runs to the last available candle if nothing has been hit yet.
+ */
+export function computeTradePlanLineSpan(tradePlan: TradePlan, candles: Candle[]): { startTime: number; endTime: number } {
+  const startIndex = candles.findIndex((c) => c.time >= tradePlan.zone.endTime);
+  const fromIndex = startIndex === -1 ? 0 : startIndex;
+  const startTime = candles[fromIndex]?.time ?? tradePlan.zone.endTime;
+
+  let endTime = candles[candles.length - 1]?.time ?? startTime;
+  for (let i = fromIndex; i < candles.length; i++) {
+    const c = candles[i];
+    if (c.low <= tradePlan.stopLoss || tradePlan.targets.some((t) => c.high >= t)) {
+      endTime = c.time;
+      break;
+    }
+  }
+
+  return { startTime, endTime };
 }
