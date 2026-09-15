@@ -452,7 +452,6 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
       validated.push(candidate);
     }
   }
-
   const mergeThreshold = referenceAtr !== null ? referenceAtr * mergeDistanceAtrRatio : 0;
   const merged = mergeCloseCandidates(validated, mergeThreshold);
 

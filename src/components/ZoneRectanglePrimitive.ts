@@ -22,9 +22,9 @@ interface RectangleCoordinates {
 }
 
 // Matches SUCCESS_COLOR / DANGER_COLOR in CandlestickChart.tsx.
-const ZONE_COLORS: Record<Zone["type"], { fill: string; border: string; guide: string }> = {
-  demand: { fill: "rgba(34, 197, 94, 0.16)", border: "rgba(34, 197, 94, 0.65)", guide: "rgba(34, 197, 94, 0.35)" },
-  supply: { fill: "rgba(240, 68, 68, 0.16)", border: "rgba(240, 68, 68, 0.65)", guide: "rgba(240, 68, 68, 0.35)" },
+const ZONE_COLORS: Record<Zone["type"], { fill: string; band: string; border: string }> = {
+  demand: { fill: "rgba(34, 197, 94, 0.30)", band: "rgba(34, 197, 94, 0.10)", border: "rgba(34, 197, 94, 0.75)" },
+  supply: { fill: "rgba(240, 68, 68, 0.30)", band: "rgba(240, 68, 68, 0.10)", border: "rgba(240, 68, 68, 0.75)" },
 };
 
 class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
@@ -45,30 +45,22 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
       const bottom = Math.max(y1, y2) * scope.verticalPixelRatio;
       const colors = ZONE_COLORS[this.zoneType];
 
+      // The true origin box is only the 1-6 base candles wide (ICT/SMC
+      // style) — a handful of pixels once zoomed out, easy to miss
+      // entirely. A light fill across the *whole* band out to the present
+      // keeps the level unmistakably visible on the chart, while the
+      // origin box itself still gets a visibly stronger fill and border so
+      // the precise Order Block is still there to read.
+      if (xEnd !== null && xEnd > right) {
+        ctx.fillStyle = colors.band;
+        ctx.fillRect(right, top, xEnd * scope.horizontalPixelRatio - right, bottom - top);
+      }
+
       ctx.fillStyle = colors.fill;
       ctx.fillRect(left, top, right - left, bottom - top);
       ctx.strokeStyle = colors.border;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(left, top, right - left, bottom - top);
-
-      // The box itself stays a true, narrow 1-3 candle Order Block (ICT/SMC
-      // style), but that's only a handful of pixels wide once zoomed out —
-      // easy to miss entirely. Thin dashed guide lines from its edges out to
-      // the present keep the level visible without widening the box itself.
-      if (xEnd !== null && xEnd > right) {
-        const guideEnd = xEnd * scope.horizontalPixelRatio;
-        ctx.save();
-        ctx.strokeStyle = colors.guide;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3 * scope.horizontalPixelRatio, 3 * scope.horizontalPixelRatio]);
-        ctx.beginPath();
-        ctx.moveTo(right, top);
-        ctx.lineTo(guideEnd, top);
-        ctx.moveTo(right, bottom);
-        ctx.lineTo(guideEnd, bottom);
-        ctx.stroke();
-        ctx.restore();
-      }
     });
   }
 }
