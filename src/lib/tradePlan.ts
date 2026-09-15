@@ -1,6 +1,11 @@
 import { calculateATR } from "./indicators";
 import type { Candle, TradePlan, Zone } from "./types";
 
+function latestAtr(candles: Candle[], period = 14): number | null {
+  const atr = calculateATR(candles, period);
+  return [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
+}
+
 export interface BuildTradePlanOptions {
   /** Extra room below the zone for the stop loss, as a fraction of zone height. */
   stopBufferRatio?: number;
@@ -43,8 +48,7 @@ export function buildTradePlan(
     maxEntryDistanceAtrRatio = 2,
   } = options;
 
-  const atr = calculateATR(candles, 14);
-  const referenceAtr = [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
+  const referenceAtr = latestAtr(candles);
   const maxEntryDistance = referenceAtr !== null ? referenceAtr * maxEntryDistanceAtrRatio : Infinity;
 
   const activeDemandZonesBelow = zones.filter(
@@ -78,6 +82,37 @@ export function buildTradePlan(
   if (riskRewardRatios[0] < minFirstTargetRR) return null;
 
   return { zone: nearest, entry, stopLoss, targets, riskAmount, riskRewardRatios };
+}
+
+/**
+ * The nearest active demand zone price is heading toward but hasn't
+ * actually reached yet — further out than buildTradePlan's own live-setup
+ * range, but close enough to be worth flagging so a limit buy order can be
+ * queued at the zone's top ahead of the return, instead of only finding out
+ * once price is already there. Returns null once a real trade plan exists
+ * (that already covers it) or once nothing sits within the watch range.
+ */
+export function findApproachingDemandZone(
+  zones: Zone[],
+  currentPrice: number,
+  candles: Candle[],
+  options: { maxEntryDistanceAtrRatio?: number; watchDistanceAtrRatio?: number } = {}
+): Zone | null {
+  const { maxEntryDistanceAtrRatio = 2, watchDistanceAtrRatio = 6 } = options;
+
+  const referenceAtr = latestAtr(candles);
+  if (referenceAtr === null) return null;
+  const minDistance = referenceAtr * maxEntryDistanceAtrRatio;
+  const maxDistance = referenceAtr * watchDistanceAtrRatio;
+
+  const candidates = zones.filter((z) => {
+    if (z.type !== "demand" || !z.active || z.top >= currentPrice) return false;
+    const distance = currentPrice - z.top;
+    return distance > minDistance && distance <= maxDistance;
+  });
+  if (candidates.length === 0) return null;
+
+  return candidates.reduce((closest, zone) => (zone.top > closest.top ? zone : closest));
 }
 
 /**

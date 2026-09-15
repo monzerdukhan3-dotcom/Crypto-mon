@@ -23,6 +23,8 @@ interface CandlestickChartProps {
   data: Candle[];
   zones?: Zone[];
   tradePlan?: TradePlan | null;
+  /** Id of a zone price is currently approaching (but hasn't reached yet) — drawn with an extra highlight. */
+  highlightZoneId?: string | null;
   timeframe: Timeframe;
 }
 
@@ -52,7 +54,13 @@ function formatCountdown(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export default function CandlestickChart({ data, zones = [], tradePlan = null, timeframe }: CandlestickChartProps) {
+export default function CandlestickChart({
+  data,
+  zones = [],
+  tradePlan = null,
+  highlightZoneId = null,
+  timeframe,
+}: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
@@ -65,19 +73,27 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
   // in which a fast second click can be dropped entirely.
   const pendingPointRef = useRef<{ time: number; price: number } | null>(null);
   const [secondsToClose, setSecondsToClose] = useState<number | null>(null);
-
-  const periodChangePct =
-    data.length > 1 && data[0].close > 0 ? ((data[data.length - 1].close - data[0].close) / data[0].close) * 100 : 0;
+  // Y position (within the chart container) of the current price, so the
+  // countdown badge can sit right under the price scale's last-price tag —
+  // TradingView's convention — instead of floating in a corner.
+  const [priceY, setPriceY] = useState<number | null>(null);
 
   // Countdown to the current (last) candle's close, ticking every second.
+  // Also re-reads the current price's on-screen position each tick — cheap,
+  // and keeps the badge glued to the price tag without a separate
+  // subscription for every way the price's Y coordinate can move (pan,
+  // zoom, resize, new data).
   useEffect(() => {
     function tick() {
       if (data.length === 0) {
         setSecondsToClose(null);
+        setPriceY(null);
         return;
       }
       const closeTime = (data[data.length - 1].time + TIMEFRAME_SECONDS[timeframe]) * 1000;
       setSecondsToClose(Math.max(0, Math.round((closeTime - Date.now()) / 1000)));
+      const y = seriesRef.current?.priceToCoordinate(data[data.length - 1].close) ?? null;
+      setPriceY(y);
     }
     tick();
     const interval = setInterval(tick, 1000);
@@ -125,7 +141,7 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
       }))
     );
 
-    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone));
+    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone, zone.id === highlightZoneId));
     for (const primitive of zonePrimitives) {
       series.attachPrimitive(primitive);
     }
@@ -147,6 +163,16 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
       chart.timeScale().fitContent();
     }
 
+    function updatePriceY() {
+      if (data.length === 0) return;
+      setPriceY(series.priceToCoordinate(data[data.length - 1].close));
+    }
+    updatePriceY();
+    // The price's Y position also moves on pan/zoom (price scale
+    // autoscales to whatever's visible) and on resize, not just when new
+    // data arrives — both need to keep the countdown badge glued in place.
+    chart.timeScale().subscribeVisibleLogicalRangeChange(updatePriceY);
+
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -154,11 +180,13 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
         width: entry.contentRect.width,
         height: entry.contentRect.height,
       });
+      updatePriceY();
     });
     resizeObserver.observe(container);
 
     return () => {
       resizeObserver.disconnect();
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
       for (const primitive of zonePrimitives) {
         series.detachPrimitive(primitive);
       }
@@ -166,7 +194,7 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [data, zones]);
+  }, [data, zones, highlightZoneId]);
 
   // Entry / stop-loss / target lines for the active trade plan — bounded
   // segments (not lightweight-charts' full-width price lines): they start
@@ -303,22 +331,19 @@ export default function CandlestickChart({ data, zones = [], tradePlan = null, t
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-1.5">
-        <span
-          className={`rounded-md px-2 py-1 text-xs font-semibold ${
-            periodChangePct >= 0 ? "bg-success-soft text-success" : "bg-danger-soft text-danger"
-          }`}
+      {/* Sits right under the price scale's current-price tag, TradingView-
+          style, instead of floating in a corner unrelated to what it's
+          timing. priceY is the tag's own on-screen position, kept in sync
+          with pan/zoom/resize above. */}
+      {secondsToClose !== null && priceY !== null && (
+        <div
+          className="pointer-events-none absolute right-3 z-10 flex items-center gap-1 rounded-md border border-surface-border bg-surface/90 px-2 py-1 text-xs font-medium text-muted shadow-sm backdrop-blur"
+          style={{ top: priceY + 14 }}
         >
-          {periodChangePct >= 0 ? "+" : ""}
-          {periodChangePct.toFixed(2)}%
-        </span>
-        {secondsToClose !== null && (
-          <span className="flex items-center gap-1 rounded-md border border-surface-border bg-surface/90 px-2 py-1 text-xs font-medium text-muted backdrop-blur">
-            <Timer className="h-3 w-3" strokeWidth={2.25} />
-            {formatCountdown(secondsToClose)}
-          </span>
-        )}
-      </div>
+          <Timer className="h-3 w-3" strokeWidth={2.25} />
+          {formatCountdown(secondsToClose)}
+        </div>
+      )}
 
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
         <button

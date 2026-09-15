@@ -95,12 +95,38 @@ interface CryptoComTickersResponse {
 const EXCLUDED_BASE_SYMBOLS = new Set(["USD", "EUR", "GBP", "AUD", "JPY", "CAD", "CHF"]);
 
 /**
+ * A best-effort exclusion list for an Islamic-finance-conscious "halal
+ * coins" filter — NOT a certified religious ruling. There's no official API
+ * or standardized service for Sharia-screening individual cryptocurrencies,
+ * so this only excludes the clearest, least-disputed categories: coins
+ * built around gambling/betting platforms, and pure-speculation meme coins
+ * with no underlying utility. Everything else here is treated as a normal
+ * crypto asset. Consult a qualified source for anything beyond that.
+ */
+const HALAL_EXCLUDED_SYMBOLS = new Set([
+  // Gambling / betting platforms.
+  "FUN", // FunFair — online casino platform
+  "DICE",
+  "WINK", // WINkLink — gambling-focused oracle/dApp ecosystem
+  // Pure-speculation meme coins (no underlying utility beyond the joke).
+  "DOGE",
+  "SHIB",
+  "PEPE",
+  "BONK",
+  "WIF",
+  "FLOKI",
+  "BOME",
+  "TRUMP",
+  "PUMP",
+]);
+
+/**
  * Fetches all USDT trading pairs from Crypto.com's public tickers endpoint
  * (also public, no API key) and ranks them by 24h quote volume — the closest
  * practical proxy to market activity/size this exchange API exposes (it
  * doesn't report market cap directly).
  */
-export async function getTopSymbolsByVolume(limit = 30): Promise<SymbolInfo[]> {
+export async function getTopSymbolsByVolume(limit = 30, halalOnly = true): Promise<SymbolInfo[]> {
   const res = await fetch(CRYPTO_COM_TICKERS_URL, { next: { revalidate: 300 } });
   if (!res.ok) {
     throw new Error(`Crypto.com tickers request failed (${res.status}): ${await res.text()}`);
@@ -114,6 +140,7 @@ export async function getTopSymbolsByVolume(limit = 30): Promise<SymbolInfo[]> {
   return json.result.data
     .filter((t) => t.i.endsWith("_USDT"))
     .filter((t) => !EXCLUDED_BASE_SYMBOLS.has(t.i.replace("_USDT", "")))
+    .filter((t) => !halalOnly || !HALAL_EXCLUDED_SYMBOLS.has(t.i.replace("_USDT", "")))
     .map((t) => ({ symbol: t.i.replace("_USDT", ""), pair: t.i, volumeUsd: Number(t.vv) }))
     .sort((a, b) => b.volumeUsd - a.volumeUsd)
     .slice(0, limit)

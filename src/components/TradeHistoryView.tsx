@@ -22,10 +22,18 @@ function timeframeLabel(timeframe: Timeframe): string {
   return TIMEFRAMES.find((t) => t.value === timeframe)?.label ?? timeframe;
 }
 
+// A trade counts as successful the moment it reaches even one target —
+// hitting the stop loss on whatever's left of the position afterward
+// doesn't undo that first win, so a hit target always takes priority over
+// a later stop-out when labeling the record.
 function statusInfo(record: TradeRecord): { label: string; tone: "success" | "danger" | "muted" } {
-  if (record.stoppedOut) return { label: "وقف خسارة", tone: "danger" };
   if (record.highestTargetHit >= record.targets.length) return { label: "تحقّقت كل الأهداف", tone: "success" };
-  if (record.highestTargetHit > 0) return { label: `تحقّق الهدف ${record.highestTargetHit}`, tone: "success" };
+  if (record.highestTargetHit > 0) {
+    return record.stoppedOut
+      ? { label: `نجحت (الهدف ${record.highestTargetHit}) ثم أُغلقت`, tone: "success" }
+      : { label: `تحقّق الهدف ${record.highestTargetHit}`, tone: "success" };
+  }
+  if (record.stoppedOut) return { label: "وقف خسارة", tone: "danger" };
   return { label: "قيد الانتظار", tone: "muted" };
 }
 
@@ -134,10 +142,15 @@ export default function TradeHistoryView() {
   const sorted = useMemo(() => [...(records ?? [])].sort((a, b) => b.loggedAt - a.loggedAt), [records]);
 
   const stats = useMemo(() => {
-    const resolved = sorted.filter((r) => r.resolved);
-    const wins = resolved.filter((r) => !r.stoppedOut).length;
-    const losses = resolved.filter((r) => r.stoppedOut).length;
-    const winRate = resolved.length > 0 ? Math.round((wins / resolved.length) * 100) : null;
+    // A trade is a win as soon as it hits its first target, even if it's
+    // still open toward the rest or later stops out on what's left — that
+    // first target is already banked. Only a stop-out with zero targets
+    // hit ever counts as a loss. A record that hasn't hit anything yet and
+    // hasn't stopped out is still pending, so it's left out of the rate.
+    const wins = sorted.filter((r) => r.highestTargetHit > 0).length;
+    const losses = sorted.filter((r) => r.stoppedOut && r.highestTargetHit === 0).length;
+    const decided = wins + losses;
+    const winRate = decided > 0 ? Math.round((wins / decided) * 100) : null;
     return { total: sorted.length, wins, losses, winRate };
   }, [sorted]);
 

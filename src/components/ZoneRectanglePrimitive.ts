@@ -25,11 +25,15 @@ const ZONE_COLORS: Record<Zone["type"], { fill: string; band: string; border: st
   demand: { fill: "rgba(34, 197, 94, 0.30)", band: "rgba(34, 197, 94, 0.10)", border: "rgba(34, 197, 94, 0.75)" },
   supply: { fill: "rgba(240, 68, 68, 0.30)", band: "rgba(240, 68, 68, 0.10)", border: "rgba(240, 68, 68, 0.75)" },
 };
+// Matches --color-info: the "price is approaching this one" callout, same
+// accent as the sidebar's alert so the two clearly refer to each other.
+const HIGHLIGHT_COLOR = "#3b82f6";
 
 class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly coords: RectangleCoordinates,
-    private readonly zoneType: Zone["type"]
+    private readonly zoneType: Zone["type"],
+    private readonly highlighted: boolean
   ) {}
 
   draw(target: CanvasRenderingTarget2D) {
@@ -62,6 +66,18 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
       ctx.strokeStyle = colors.border;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(left, top, right - left, bottom - top);
+
+      // Price is heading toward this specific zone but hasn't reached it
+      // yet — an extra dashed outline around the whole visible band (not
+      // just the narrow origin box) flags exactly which one to watch.
+      if (this.highlighted && scope.bitmapSize.width > right) {
+        ctx.save();
+        ctx.strokeStyle = HIGHLIGHT_COLOR;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6 * scope.horizontalPixelRatio, 4 * scope.horizontalPixelRatio]);
+        ctx.strokeRect(left, top, scope.bitmapSize.width - left, bottom - top);
+        ctx.restore();
+      }
     });
   }
 }
@@ -85,7 +101,7 @@ class ZoneRectanglePaneView implements IPrimitivePaneView {
   }
 
   renderer() {
-    return new ZoneRectanglePaneRenderer(this.coords, this.source.zone.type);
+    return new ZoneRectanglePaneRenderer(this.coords, this.source.zone.type, this.source.highlighted);
   }
 }
 
@@ -95,7 +111,11 @@ export class ZoneRectanglePrimitive implements ISeriesPrimitive<Time> {
   series: ISeriesApi<SeriesType> | null = null;
   private readonly paneView: ZoneRectanglePaneView;
 
-  constructor(public readonly zone: Zone) {
+  /** @param highlighted Marks this as the zone price is currently approaching, for the "prepare a limit order" callout. */
+  constructor(
+    public readonly zone: Zone,
+    public readonly highlighted: boolean = false
+  ) {
     this.paneView = new ZoneRectanglePaneView(this);
   }
 

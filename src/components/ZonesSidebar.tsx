@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
+  Bell,
   CircleCheckBig,
   Crosshair,
   ExternalLink,
@@ -27,6 +28,7 @@ interface ZonesSidebarProps {
   symbol: string;
   zones: Zone[];
   tradePlan: TradePlan | null;
+  approachingZone: Zone | null;
   tradeProgress: TradeProgress | null;
   confidence: TradeConfidence | null;
   technicalSummary: string;
@@ -85,12 +87,25 @@ function Row({
 
 function Card({ icon: Icon, title, children }: { icon: typeof Target; title: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-surface-border bg-surface p-5 shadow-sm">
+    <div className="rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
       <h2 className="mb-4 flex items-center gap-2 font-semibold text-foreground">
-        <Icon className="h-4 w-4 text-muted" strokeWidth={2.25} />
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-background text-muted">
+          <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </span>
         {title}
       </h2>
       {children}
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, children }: { icon: typeof Target; children: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-3 text-center">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-background text-muted">
+        <Icon className="h-4 w-4" strokeWidth={2} />
+      </span>
+      <p className="text-sm text-muted">{children}</p>
     </div>
   );
 }
@@ -100,11 +115,12 @@ function Note({
   icon: Icon,
   children,
 }: {
-  tone: "warning" | "success";
+  tone: "warning" | "success" | "info";
   icon: typeof AlertTriangle;
   children: ReactNode;
 }) {
-  const classes = tone === "warning" ? "bg-warning-soft text-warning" : "bg-success-soft text-success";
+  const classes =
+    tone === "warning" ? "bg-warning-soft text-warning" : tone === "info" ? "bg-info-soft text-info" : "bg-success-soft text-success";
   return (
     <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs font-medium ${classes}`}>
       <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
@@ -114,9 +130,9 @@ function Note({
 }
 
 function confidenceColors(score: number): { text: string; bar: string } {
-  if (score > 60) return { text: "text-success", bar: "bg-success" };
-  if (score >= 40) return { text: "text-warning", bar: "bg-warning" };
-  return { text: "text-danger", bar: "bg-danger" };
+  if (score > 60) return { text: "text-success", bar: "bg-gradient-to-r from-success/70 to-success" };
+  if (score >= 40) return { text: "text-warning", bar: "bg-gradient-to-r from-warning/70 to-warning" };
+  return { text: "text-danger", bar: "bg-gradient-to-r from-danger/70 to-danger" };
 }
 
 function formatDate(unixSeconds: number): string {
@@ -127,6 +143,7 @@ export default function ZonesSidebar({
   symbol,
   zones,
   tradePlan,
+  approachingZone,
   tradeProgress,
   confidence,
   technicalSummary,
@@ -172,8 +189,16 @@ export default function ZonesSidebar({
                 />
               ))}
             </>
+          ) : approachingZone ? (
+            <>
+              <Note tone="info" icon={Bell}>
+                السعر يقترب من منطقة طلب عند {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)}
+                — جهّز أمر شراء معلّق عندها.
+              </Note>
+              <Row icon={Crosshair} label="نقطة التعليق المقترحة" value={formatPrice(approachingZone.top)} />
+            </>
           ) : (
-            <p className="text-sm text-muted">لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</p>
+            <EmptyState icon={Target}>لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</EmptyState>
           )}
         </div>
       </Card>
@@ -198,7 +223,7 @@ export default function ZonesSidebar({
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-surface-border">
                 <div
-                  className={`h-full rounded-full ${tradeProgress.nearestLevel === "target1" ? "bg-success" : "bg-danger"}`}
+                  className={`h-full rounded-full transition-[width] duration-500 ${tradeProgress.nearestLevel === "target1" ? "bg-gradient-to-r from-success/70 to-success" : "bg-gradient-to-r from-danger/70 to-danger"}`}
                   style={{ width: `${tradeProgress.proximityPct}%` }}
                 />
               </div>
@@ -218,7 +243,7 @@ export default function ZonesSidebar({
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-surface-border">
               <div
-                className={`h-full rounded-full ${confidenceColors(confidence.score).bar}`}
+                className={`h-full rounded-full transition-[width] duration-500 ${confidenceColors(confidence.score).bar}`}
                 style={{ width: `${confidence.score}%` }}
               />
             </div>
@@ -234,7 +259,7 @@ export default function ZonesSidebar({
             )}
           </div>
         ) : (
-          <p className="text-sm text-muted">لا توجد صفقة مقترحة حاليًا لتقييمها.</p>
+          <EmptyState icon={Gauge}>لا توجد صفقة مقترحة حاليًا لتقييمها.</EmptyState>
         )}
       </Card>
 
@@ -255,20 +280,28 @@ export default function ZonesSidebar({
 
       <Card icon={Layers} title={`المناطق النشطة (${activeZones.length})`}>
         {activeZones.length === 0 ? (
-          <p className="text-sm text-muted">لم يتم رصد مناطق بعد.</p>
+          <EmptyState icon={Layers}>لم يتم رصد مناطق بعد.</EmptyState>
         ) : (
           <ul className="flex max-h-80 flex-col gap-3 overflow-y-auto">
             {activeZones.map((zone) => (
-              <li key={zone.id} className="flex items-center justify-between gap-2 text-sm">
+              <li
+                key={zone.id}
+                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-sm ${
+                  zone.id === approachingZone?.id ? "bg-info-soft" : ""
+                }`}
+              >
                 <span
                   className={`h-2 w-2 shrink-0 rounded-full ${
                     zone.type === "demand" ? "bg-success" : "bg-danger"
                   }`}
                   aria-hidden
                 />
-                <span className="flex-1 text-foreground">
+                <span className="flex flex-1 items-center gap-1.5 text-foreground">
                   {zone.type === "demand" ? "طلب" : "عرض"} {formatPrice(zone.bottom)}–
                   {formatPrice(zone.top)}
+                  {zone.id === approachingZone?.id && (
+                    <Bell className="h-3 w-3 text-info" strokeWidth={2.25} aria-label="اقتراب" />
+                  )}
                 </span>
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STRENGTH_CLASSES[zone.strength]}`}

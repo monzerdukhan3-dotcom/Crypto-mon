@@ -1,10 +1,11 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
-import { buildTradePlan } from "@/lib/tradePlan";
+import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
 import { evaluateTradeOutcome, loadTradeHistory, logTradePlanIfNew, saveTradeHistory } from "@/lib/tradeHistory";
 import type { Candle } from "@/lib/types";
@@ -104,6 +105,12 @@ export default function AnalysisDashboard() {
     () => (currentPrice !== null ? buildTradePlan(zones, currentPrice, candles) : null),
     [zones, currentPrice, candles]
   );
+  // Only worth flagging once there's no live trade plan already — a real
+  // plan already highlights its own entry zone.
+  const approachingZone = useMemo(
+    () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(zones, currentPrice, candles) : null),
+    [tradePlan, zones, currentPrice, candles]
+  );
   const confidence = useMemo(
     () => (tradePlan ? scoreTradeConfidence(tradePlan, zones, candles, dailyCandles) : null),
     [tradePlan, zones, candles, dailyCandles]
@@ -142,13 +149,13 @@ export default function AnalysisDashboard() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
-      <div className="flex flex-col gap-4 rounded-xl border border-surface-border bg-surface p-5 shadow-sm sm:flex-row">
+      <div className="flex flex-col gap-4 rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row">
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           العملة
           <select
             value={symbol}
             onChange={(e) => setSymbol(e.target.value as Symbol)}
-            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-success/40"
+            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
           >
             {availableSymbols.map((s) => (
               <option key={s.symbol} value={s.symbol}>
@@ -163,7 +170,7 @@ export default function AnalysisDashboard() {
           <select
             value={timeframe}
             onChange={(e) => setTimeframe(e.target.value as Timeframe)}
-            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground focus:outline-none focus:ring-2 focus:ring-success/40"
+            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
           >
             {TIMEFRAMES.map((t) => (
               <option key={t.value} value={t.value}>
@@ -174,10 +181,16 @@ export default function AnalysisDashboard() {
         </label>
       </div>
 
+      <p className="text-xs leading-relaxed text-muted">
+        القائمة تضم أعلى 40 عملة سيولة وحجم تداول على المنصة، مع استبعاد اجتهادي لعملات القمار والميمز الصرفة —
+        هذا اجتهاد تقني وليس فتوى شرعية معتمدة؛ راجع مصدرًا موثوقًا قبل الاعتماد عليه في قرار الاستثمار.
+      </p>
+
       <div className="flex flex-col gap-5 lg:flex-row">
-        <div className="h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm lg:h-[560px] lg:flex-1">
+        <div className="h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm transition-shadow duration-200 hover:shadow-md lg:h-[560px] lg:flex-1">
           {status === "loading" && (
-            <div className="flex h-full items-center justify-center text-sm text-muted">
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted">
+              <Loader2 className="h-5 w-5 animate-spin text-success" strokeWidth={2.25} />
               جاري تحميل بيانات {symbol}...
             </div>
           )}
@@ -187,7 +200,13 @@ export default function AnalysisDashboard() {
             </div>
           )}
           {status === "ready" && (
-            <CandlestickChart data={candles} zones={zones} tradePlan={tradePlan} timeframe={timeframe} />
+            <CandlestickChart
+              data={candles}
+              zones={zones}
+              tradePlan={tradePlan}
+              highlightZoneId={approachingZone?.id ?? null}
+              timeframe={timeframe}
+            />
           )}
         </div>
 
@@ -196,6 +215,7 @@ export default function AnalysisDashboard() {
             symbol={symbol}
             zones={zones}
             tradePlan={tradePlan}
+            approachingZone={approachingZone}
             tradeProgress={tradeProgress}
             confidence={confidence}
             technicalSummary={technicalSummary}

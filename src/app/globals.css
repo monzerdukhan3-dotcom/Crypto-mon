@@ -13,6 +13,8 @@
   --danger-soft: rgba(220, 38, 38, 0.12);
   --warning: #d97706;
   --warning-soft: rgba(217, 119, 6, 0.12);
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.12);
 }
 
 @theme inline {
@@ -27,6 +29,8 @@
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
   --font-sans: var(--font-tajawal);
 }
 
@@ -45,6 +49,8 @@
     --danger-soft: rgba(240, 68, 68, 0.16);
     --warning: #f0a020;
     --warning-soft: rgba(240, 160, 32, 0.16);
+    --info: #3b82f6;
+    --info-soft: rgba(59, 130, 246, 0.16);
   }
 }
 
