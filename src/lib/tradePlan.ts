@@ -1,3 +1,4 @@
+import { calculateATR } from "./indicators";
 import type { Candle, TradePlan, Zone } from "./types";
 
 export interface BuildTradePlanOptions {
@@ -7,26 +8,47 @@ export interface BuildTradePlanOptions {
   targetRMultiples?: number[];
   /** Minimum acceptable reward:risk on the first target — reject the setup below this. */
   minFirstTargetRR?: number;
+  /** How close price must already be to a zone (in ATR units) before it counts as a live setup, not just a level to watch. */
+  maxEntryDistanceAtrRatio?: number;
 }
 
 /**
  * Builds an automatic trade plan off the nearest active demand zone below the
- * current price: entry at the zone's top (where a pullback would first tag
- * it), stop loss just under the zone's bottom, and 3 ascending targets that
- * prefer real active supply zones above entry, falling back to risk-multiples
- * when there aren't enough of those. Returns null if there's no such zone,
- * or if the first target's reward:risk doesn't clear the minimum bar — a
- * technically strong zone still isn't a trade if the setup itself is poor.
+ * current price — but only once price has actually come back within reach of
+ * it. A zone only forms after its impulse leaves it, so a demand zone still
+ * has to be waited on: there's no "entry" the moment it forms while price is
+ * off making that impulse move elsewhere, only once it returns. A zone
+ * sitting many ATRs below the current price is a level to watch, not a live
+ * setup, so it's excluded here even though it's still a perfectly valid
+ * zone for the sidebar's zone list.
+ *
+ * Entry sits at the zone's top (where a pullback first tags it), stop loss
+ * just under the zone's bottom, and 3 ascending targets that prefer real
+ * active supply zones above entry, falling back to risk-multiples when
+ * there aren't enough of those. Returns null if there's no zone within
+ * reach, or if the first target's reward:risk doesn't clear the minimum bar
+ * — a technically strong zone still isn't a trade if the setup itself is
+ * poor.
  */
 export function buildTradePlan(
   zones: Zone[],
   currentPrice: number,
+  candles: Candle[],
   options: BuildTradePlanOptions = {}
 ): TradePlan | null {
-  const { stopBufferRatio = 0.15, targetRMultiples = [1.5, 2.5, 4], minFirstTargetRR = 1 } = options;
+  const {
+    stopBufferRatio = 0.15,
+    targetRMultiples = [1.5, 2.5, 4],
+    minFirstTargetRR = 1,
+    maxEntryDistanceAtrRatio = 2,
+  } = options;
+
+  const atr = calculateATR(candles, 14);
+  const referenceAtr = [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
+  const maxEntryDistance = referenceAtr !== null ? referenceAtr * maxEntryDistanceAtrRatio : Infinity;
 
   const activeDemandZonesBelow = zones.filter(
-    (z) => z.type === "demand" && z.active && z.top < currentPrice
+    (z) => z.type === "demand" && z.active && z.top < currentPrice && currentPrice - z.top <= maxEntryDistance
   );
   if (activeDemandZonesBelow.length === 0) return null;
 

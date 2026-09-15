@@ -101,8 +101,8 @@ export default function AnalysisDashboard() {
     [candles, dailyCandles]
   );
   const tradePlan = useMemo(
-    () => (currentPrice !== null ? buildTradePlan(zones, currentPrice) : null),
-    [zones, currentPrice]
+    () => (currentPrice !== null ? buildTradePlan(zones, currentPrice, candles) : null),
+    [zones, currentPrice, candles]
   );
   const confidence = useMemo(
     () => (tradePlan ? scoreTradeConfidence(tradePlan, zones, candles, dailyCandles) : null),
