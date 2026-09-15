@@ -12,10 +12,14 @@ import type {
   UTCTimestamp,
 } from "lightweight-charts";
 import type { Drawing } from "@/lib/drawingTypes";
+import { formatPrice } from "@/lib/format";
 
 // A neutral accent distinct from the success/danger zone & liquidity colors,
 // since these are user-drawn annotations rather than automated signals.
 const DRAWING_COLOR = "#3b82f6";
+// The measuring tool reads as a distinct, temporary overlay rather than a
+// support/resistance line, so it gets its own accent (matches --color-warning).
+const MEASURE_COLOR = "#f59e0b";
 
 interface RenderCoords {
   x1: Coordinate | null;
@@ -34,21 +38,78 @@ function distancePointToSegment(px: number, py: number, x1: number, y1: number, 
 }
 
 class DrawingPaneRenderer implements IPrimitivePaneRenderer {
-  constructor(private readonly coords: RenderCoords) {}
+  constructor(
+    private readonly coords: RenderCoords,
+    private readonly drawing: Drawing
+  ) {}
 
   draw(target: CanvasRenderingTarget2D) {
     const { x1, y1, x2, y2 } = this.coords;
     if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+    const isMeasure = this.drawing.kind === "measure";
 
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
-      ctx.strokeStyle = DRAWING_COLOR;
+      const px1 = x1 * scope.horizontalPixelRatio;
+      const py1 = y1 * scope.verticalPixelRatio;
+      const px2 = x2 * scope.horizontalPixelRatio;
+      const py2 = y2 * scope.verticalPixelRatio;
+
+      ctx.save();
+      ctx.strokeStyle = isMeasure ? MEASURE_COLOR : DRAWING_COLOR;
       ctx.lineWidth = 1.5;
+      if (isMeasure) ctx.setLineDash([5 * scope.horizontalPixelRatio, 3 * scope.horizontalPixelRatio]);
       ctx.beginPath();
-      ctx.moveTo(x1 * scope.horizontalPixelRatio, y1 * scope.verticalPixelRatio);
-      ctx.lineTo(x2 * scope.horizontalPixelRatio, y2 * scope.verticalPixelRatio);
+      ctx.moveTo(px1, py1);
+      ctx.lineTo(px2, py2);
       ctx.stroke();
+      ctx.restore();
+
+      if (this.drawing.kind === "measure") {
+        this.drawMeasureLabel(ctx, scope, px1, py1, px2, py2);
+      }
     });
+  }
+
+  private drawMeasureLabel(
+    ctx: CanvasRenderingContext2D,
+    scope: { horizontalPixelRatio: number; verticalPixelRatio: number },
+    px1: number,
+    py1: number,
+    px2: number,
+    py2: number
+  ) {
+    if (this.drawing.kind !== "measure") return;
+    const { point1, point2 } = this.drawing;
+    const diff = point2.price - point1.price;
+    const pct = point1.price !== 0 ? (diff / point1.price) * 100 : 0;
+    const sign = diff >= 0 ? "+" : "-";
+    const text = `${sign}${formatPrice(Math.abs(diff))} (${sign}${Math.abs(pct).toFixed(2)}%)`;
+
+    const fontSize = 12 * scope.verticalPixelRatio;
+    ctx.save();
+    ctx.font = `600 ${fontSize}px sans-serif`;
+    const paddingX = 6 * scope.horizontalPixelRatio;
+    const paddingY = 4 * scope.verticalPixelRatio;
+    const metrics = ctx.measureText(text);
+    const boxWidth = metrics.width + paddingX * 2;
+    const boxHeight = fontSize + paddingY * 2;
+    const midX = (px1 + px2) / 2;
+    const midY = (py1 + py2) / 2;
+    const boxX = midX - boxWidth / 2;
+    const boxY = midY - boxHeight / 2;
+
+    ctx.fillStyle = diff >= 0 ? "rgba(34, 197, 94, 0.92)" : "rgba(240, 68, 68, 0.92)";
+    ctx.beginPath();
+    const radius = 4 * scope.horizontalPixelRatio;
+    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, radius);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, midX, midY + 1);
+    ctx.restore();
   }
 }
 
@@ -87,7 +148,7 @@ class DrawingPaneView implements IPrimitivePaneView {
   }
 
   renderer() {
-    return new DrawingPaneRenderer(this.coords);
+    return new DrawingPaneRenderer(this.coords, this.source.drawing);
   }
 
   getCoords(): RenderCoords {

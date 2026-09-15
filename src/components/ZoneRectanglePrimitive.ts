@@ -16,14 +16,15 @@ import type { Zone } from "@/lib/types";
 interface RectangleCoordinates {
   x1: Coordinate | null;
   x2: Coordinate | null;
+  xEnd: Coordinate | null;
   y1: Coordinate | null;
   y2: Coordinate | null;
 }
 
 // Matches SUCCESS_COLOR / DANGER_COLOR in CandlestickChart.tsx.
-const ZONE_COLORS: Record<Zone["type"], { fill: string; border: string }> = {
-  demand: { fill: "rgba(34, 197, 94, 0.16)", border: "rgba(34, 197, 94, 0.65)" },
-  supply: { fill: "rgba(240, 68, 68, 0.16)", border: "rgba(240, 68, 68, 0.65)" },
+const ZONE_COLORS: Record<Zone["type"], { fill: string; border: string; guide: string }> = {
+  demand: { fill: "rgba(34, 197, 94, 0.16)", border: "rgba(34, 197, 94, 0.65)", guide: "rgba(34, 197, 94, 0.35)" },
+  supply: { fill: "rgba(240, 68, 68, 0.16)", border: "rgba(240, 68, 68, 0.65)", guide: "rgba(240, 68, 68, 0.35)" },
 };
 
 class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
@@ -33,7 +34,7 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
   ) {}
 
   draw(target: CanvasRenderingTarget2D) {
-    const { x1, x2, y1, y2 } = this.coords;
+    const { x1, x2, xEnd, y1, y2 } = this.coords;
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
 
     target.useBitmapCoordinateSpace((scope) => {
@@ -47,25 +48,45 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
       ctx.fillStyle = colors.fill;
       ctx.fillRect(left, top, right - left, bottom - top);
       ctx.strokeStyle = colors.border;
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.5;
       ctx.strokeRect(left, top, right - left, bottom - top);
+
+      // The box itself stays a true, narrow 1-3 candle Order Block (ICT/SMC
+      // style), but that's only a handful of pixels wide once zoomed out —
+      // easy to miss entirely. Thin dashed guide lines from its edges out to
+      // the present keep the level visible without widening the box itself.
+      if (xEnd !== null && xEnd > right) {
+        const guideEnd = xEnd * scope.horizontalPixelRatio;
+        ctx.save();
+        ctx.strokeStyle = colors.guide;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3 * scope.horizontalPixelRatio, 3 * scope.horizontalPixelRatio]);
+        ctx.beginPath();
+        ctx.moveTo(right, top);
+        ctx.lineTo(guideEnd, top);
+        ctx.moveTo(right, bottom);
+        ctx.lineTo(guideEnd, bottom);
+        ctx.stroke();
+        ctx.restore();
+      }
     });
   }
 }
 
 class ZoneRectanglePaneView implements IPrimitivePaneView {
-  private coords: RectangleCoordinates = { x1: null, x2: null, y1: null, y2: null };
+  private coords: RectangleCoordinates = { x1: null, x2: null, xEnd: null, y1: null, y2: null };
 
   constructor(private readonly source: ZoneRectanglePrimitive) {}
 
   update() {
-    const { chart, series, zone } = this.source;
+    const { chart, series, zone, guideEndTime } = this.source;
     if (!chart || !series) return;
 
     const timeScale = chart.timeScale();
     this.coords = {
       x1: timeScale.timeToCoordinate(zone.startTime as UTCTimestamp),
       x2: timeScale.timeToCoordinate(zone.endTime as UTCTimestamp),
+      xEnd: timeScale.timeToCoordinate(guideEndTime as UTCTimestamp),
       y1: series.priceToCoordinate(zone.top),
       y2: series.priceToCoordinate(zone.bottom),
     };
@@ -82,7 +103,11 @@ export class ZoneRectanglePrimitive implements ISeriesPrimitive<Time> {
   series: ISeriesApi<SeriesType> | null = null;
   private readonly paneView: ZoneRectanglePaneView;
 
-  constructor(public readonly zone: Zone) {
+  /** @param guideEndTime Time (usually the last candle) the dashed guide lines reach toward. */
+  constructor(
+    public readonly zone: Zone,
+    public readonly guideEndTime: number
+  ) {
     this.paneView = new ZoneRectanglePaneView(this);
   }
 

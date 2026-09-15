@@ -1,6 +1,6 @@
 "use client";
 
-import { Eraser, Minus, Slash } from "lucide-react";
+import { Eraser, Minus, Ruler, Slash } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -92,7 +92,8 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
       }))
     );
 
-    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone));
+    const lastCandleTime = data.length > 0 ? data[data.length - 1].time : 0;
+    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone, lastCandleTime));
     const liquidityPrimitives = liquidityLevels.map((level) => new LiquidityLinePrimitive(level));
     for (const primitive of [...zonePrimitives, ...liquidityPrimitives]) {
       series.attachPrimitive(primitive);
@@ -168,7 +169,7 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
         return;
       }
 
-      if (drawingTool === "trend") {
+      if (drawingTool === "trend" || drawingTool === "measure") {
         const time = chart.timeScale().coordinateToTime(x);
         const price = series.coordinateToPrice(y);
         if (time === null || price === null) return;
@@ -181,7 +182,7 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
             ...prev,
             {
               id: makeDrawingId(),
-              kind: "trend",
+              kind: drawingTool,
               point1: pendingPoint,
               point2: { time: Number(time), price },
             },
@@ -260,6 +261,14 @@ export default function CandlestickChart({ data, zones = [], liquidityLevels = [
           className={`rounded p-1.5 ${drawingTool === "trend" ? "bg-success-soft text-success" : "text-muted hover:bg-background"}`}
         >
           <Slash className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleTool("measure")}
+          title="أداة القياس"
+          className={`rounded p-1.5 ${drawingTool === "measure" ? "bg-success-soft text-success" : "text-muted hover:bg-background"}`}
+        >
+          <Ruler className="h-3.5 w-3.5" strokeWidth={2.25} />
         </button>
         {drawings.length > 0 && (
           <button
