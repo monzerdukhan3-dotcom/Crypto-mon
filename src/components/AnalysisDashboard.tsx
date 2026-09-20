@@ -7,7 +7,6 @@ import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
-import { evaluateTradeOutcome, loadTradeHistory, logTradePlanIfNew, saveTradeHistory } from "@/lib/tradeHistory";
 import type { Candle } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
 import { detectZones } from "@/lib/zones";
@@ -102,8 +101,8 @@ export default function AnalysisDashboard() {
     [candles, dailyCandles]
   );
   const tradePlan = useMemo(
-    () => (currentPrice !== null ? buildTradePlan(zones, currentPrice, candles) : null),
-    [zones, currentPrice, candles]
+    () => (currentPrice !== null ? buildTradePlan(zones, currentPrice) : null),
+    [zones, currentPrice]
   );
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
@@ -124,28 +123,6 @@ export default function AnalysisDashboard() {
     () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice) : null),
     [tradePlan, currentPrice]
   );
-
-  // Track record: log every distinct trade setup we ever propose, and
-  // opportunistically re-check any of this symbol+timeframe's still-open
-  // records against the candles we already have loaded.
-  useEffect(() => {
-    if (tradePlan && confidence) {
-      logTradePlanIfNew(symbol, timeframe, tradePlan, confidence.score);
-    }
-  }, [tradePlan, confidence, symbol, timeframe]);
-
-  useEffect(() => {
-    if (candles.length === 0) return;
-    const history = loadTradeHistory();
-    let changed = false;
-    const updated = history.map((r) => {
-      if (r.resolved || r.symbol !== symbol || r.timeframe !== timeframe) return r;
-      const next = evaluateTradeOutcome(r, candles);
-      if (next !== r) changed = true;
-      return next;
-    });
-    if (changed) saveTradeHistory(updated);
-  }, [candles, symbol, timeframe]);
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">

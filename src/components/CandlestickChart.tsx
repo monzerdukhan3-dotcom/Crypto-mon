@@ -16,6 +16,7 @@ import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
 import { computeTradePlanLineSpan } from "@/lib/tradePlan";
 import type { Candle, TradePlan, Zone } from "@/lib/types";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
+import { MeasurePrimitive, type MeasurePoint } from "./MeasurePrimitive";
 import { TradePlanLinePrimitive } from "./TradePlanLinePrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
@@ -256,6 +257,11 @@ export default function CandlestickChart({
       const series = seriesRef.current;
       if (!chart || !series) return;
 
+      // The measure tool is drag-based (see the dedicated mousedown/
+      // mousemove/mouseup effect below) — a stray click while it's active
+      // shouldn't place a point or delete an existing drawing.
+      if (drawingTool === "measure") return;
+
       if (drawingTool === "horizontal") {
         const price = series.coordinateToPrice(y);
         if (price === null) return;
@@ -264,7 +270,7 @@ export default function CandlestickChart({
         return;
       }
 
-      if (drawingTool === "trend" || drawingTool === "measure") {
+      if (drawingTool === "trend") {
         const time = chart.timeScale().coordinateToTime(x);
         const price = series.coordinateToPrice(y);
         if (time === null || price === null) return;
@@ -277,7 +283,7 @@ export default function CandlestickChart({
             ...prev,
             {
               id: makeDrawingId(),
-              kind: drawingTool,
+              kind: "trend",
               point1: pendingPoint,
               point2: { time: Number(time), price },
             },
@@ -322,6 +328,80 @@ export default function CandlestickChart({
     };
   }, [drawings, drawingTool]);
 
+  // TradingView-style ruler: press, drag, release — not two separate
+  // clicks. A MeasurePrimitive is attached only for the lifetime of the
+  // drag and detached again on mouse-up; nothing about a measurement is
+  // ever kept in `drawings` or persisted.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || drawingTool !== "measure") return;
+
+    let measurePrimitive: MeasurePrimitive | null = null;
+
+    function pointFromEvent(event: MouseEvent): MeasurePoint | null {
+      const chart = chartRef.current;
+      const series = seriesRef.current;
+      if (!chart || !series || !container) return null;
+      const rect = container.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const time = chart.timeScale().coordinateToTime(x);
+      const price = series.coordinateToPrice(y);
+      if (time === null || price === null) return null;
+      return { time: Number(time), price };
+    }
+
+    function handleMouseDown(event: MouseEvent) {
+      const series = seriesRef.current;
+      const point = pointFromEvent(event);
+      if (!series || !point) return;
+      measurePrimitive = new MeasurePrimitive(point, point, data);
+      series.attachPrimitive(measurePrimitive);
+      chartRef.current?.applyOptions({});
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      if (!measurePrimitive) return;
+      const point = pointFromEvent(event);
+      if (!point) return;
+      measurePrimitive.setPoint2(point);
+      chartRef.current?.applyOptions({});
+    }
+
+    function endDrag() {
+      if (!measurePrimitive) return;
+      seriesRef.current?.detachPrimitive(measurePrimitive);
+      measurePrimitive = null;
+      chartRef.current?.applyOptions({});
+    }
+
+    container.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", endDrag);
+
+    return () => {
+      container.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", endDrag);
+      endDrag();
+    };
+  }, [drawingTool, data]);
+
+  // Escape cancels whatever drawing tool is active, TradingView-style —
+  // including a trend line waiting on its second click, or (via the effect
+  // above re-running once drawingTool changes) a measure drag in progress.
+  useEffect(() => {
+    if (drawingTool === "none") return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        pendingPointRef.current = null;
+        setDrawingTool("none");
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [drawingTool]);
+
   function toggleTool(tool: DrawingTool) {
     pendingPointRef.current = null;
     setDrawingTool((current) => (current === tool ? "none" : tool));
@@ -329,7 +409,7 @@ export default function CandlestickChart({
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+      <div ref={containerRef} className={`h-full w-full ${drawingTool !== "none" ? "cursor-crosshair" : ""}`} />
 
       {/* Sits right under the price scale's current-price tag, TradingView-
           style, instead of floating in a corner unrelated to what it's

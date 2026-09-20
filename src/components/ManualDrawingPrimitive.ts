@@ -12,14 +12,10 @@ import type {
   UTCTimestamp,
 } from "lightweight-charts";
 import type { Drawing } from "@/lib/drawingTypes";
-import { formatPrice } from "@/lib/format";
 
 // A neutral accent distinct from the success/danger zone colors, since
 // these are user-drawn annotations rather than automated signals.
 const DRAWING_COLOR = "#3b82f6";
-// The measuring tool reads as a distinct, temporary overlay rather than a
-// support/resistance line, so it gets its own accent (matches --color-warning).
-const MEASURE_COLOR = "#f59e0b";
 
 interface RenderCoords {
   x1: Coordinate | null;
@@ -46,7 +42,6 @@ class DrawingPaneRenderer implements IPrimitivePaneRenderer {
   draw(target: CanvasRenderingTarget2D) {
     const { x1, y1, x2, y2 } = this.coords;
     if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-    const isMeasure = this.drawing.kind === "measure";
 
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
@@ -56,80 +51,14 @@ class DrawingPaneRenderer implements IPrimitivePaneRenderer {
       const py2 = y2 * scope.verticalPixelRatio;
 
       ctx.save();
-      ctx.strokeStyle = isMeasure ? MEASURE_COLOR : DRAWING_COLOR;
+      ctx.strokeStyle = DRAWING_COLOR;
       ctx.lineWidth = 1.5;
-      if (isMeasure) ctx.setLineDash([5 * scope.horizontalPixelRatio, 3 * scope.horizontalPixelRatio]);
       ctx.beginPath();
       ctx.moveTo(px1, py1);
       ctx.lineTo(px2, py2);
       ctx.stroke();
       ctx.restore();
-
-      if (this.drawing.kind === "measure") {
-        // A drawing primitive's draw() runs on every repaint of the whole
-        // pane alongside every other primitive; an uncaught error here (a
-        // canvas API a particular browser doesn't support, say) can abort
-        // the batch and leave every OTHER drawing/zone unpainted too, not
-        // just this one — so this one spot is deliberately defensive.
-        try {
-          this.drawMeasureLabel(ctx, scope, px1, py1, px2, py2);
-        } catch {
-          // Label is a nice-to-have; the line itself already drew above.
-        }
-      }
     });
-  }
-
-  private drawMeasureLabel(
-    ctx: CanvasRenderingContext2D,
-    scope: { horizontalPixelRatio: number; verticalPixelRatio: number },
-    px1: number,
-    py1: number,
-    px2: number,
-    py2: number
-  ) {
-    if (this.drawing.kind !== "measure") return;
-    const { point1, point2 } = this.drawing;
-    const diff = point2.price - point1.price;
-    const pct = point1.price !== 0 ? (diff / point1.price) * 100 : 0;
-    const sign = diff >= 0 ? "+" : "-";
-    const text = `${sign}${formatPrice(Math.abs(diff))} (${sign}${Math.abs(pct).toFixed(2)}%)`;
-
-    const fontSize = 12 * scope.verticalPixelRatio;
-    ctx.save();
-    ctx.font = `600 ${fontSize}px sans-serif`;
-    const paddingX = 6 * scope.horizontalPixelRatio;
-    const paddingY = 4 * scope.verticalPixelRatio;
-    const metrics = ctx.measureText(text);
-    const boxWidth = metrics.width + paddingX * 2;
-    const boxHeight = fontSize + paddingY * 2;
-    const midX = (px1 + px2) / 2;
-    const midY = (py1 + py2) / 2;
-    const boxX = midX - boxWidth / 2;
-    const boxY = midY - boxHeight / 2;
-
-    ctx.fillStyle = diff >= 0 ? "rgba(34, 197, 94, 0.92)" : "rgba(240, 68, 68, 0.92)";
-    // Drawn by hand (not ctx.roundRect, which is missing in some older
-    // browsers/webviews) so the label degrades gracefully everywhere.
-    const radius = Math.min(4 * scope.horizontalPixelRatio, boxWidth / 2, boxHeight / 2);
-    ctx.beginPath();
-    ctx.moveTo(boxX + radius, boxY);
-    ctx.lineTo(boxX + boxWidth - radius, boxY);
-    ctx.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + radius, radius);
-    ctx.lineTo(boxX + boxWidth, boxY + boxHeight - radius);
-    ctx.arcTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - radius, boxY + boxHeight, radius);
-    ctx.lineTo(boxX + radius, boxY + boxHeight);
-    ctx.arcTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - radius, radius);
-    ctx.lineTo(boxX, boxY + radius);
-    ctx.arcTo(boxX, boxY, boxX + radius, boxY, radius);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, midX, midY + 1);
-    ctx.restore();
   }
 }
 

@@ -326,26 +326,24 @@ function isImpulseValidated(
   return isImpulseValidated(brokenOpposing, candles, trendlines, validatedSoFar, depth + 1, maxDepth);
 }
 
+interface EvaluatedZonesResult {
+  /** Every validated, merged zone that ever formed — including ones since broken through. */
+  all: (Zone & { pivotIndex: number })[];
+  /** Only the zones still active as of the latest candle, matching detectZones' historical behavior. */
+  activeOnly: (Zone & { pivotIndex: number })[];
+  currentPrice: number;
+  minDistanceFromPrice: number;
+}
+
 /**
- * Detects supply (resistance) and demand (support) zones with a
- * Base-and-Impulse model, gated by a validation ("اثبات") pass before
- * anything is scored or drawn, then scored by freshness, impulse size, base
- * quality, breakout cleanliness, retest behavior, and (optionally)
- * higher-timeframe confluence:
- * - a zone whose origin impulse isn't validated (no trendline break, no
- *   validated opposing zone broken, no new historical extreme) is dropped
- *   outright — it never gets drawn
- * - broken zones (a full candle closes decisively through them) are dropped
- *   entirely rather than kept around for historical context
- * - near-duplicate zones of the same type (within half an ATR of each
- *   other) are merged into one
- * - zones sitting within half an ATR of the current price are dropped as
- *   impractically close to trade
- * - a zone with a closer opposing zone on its target side than 2x its own
- *   height is dropped — no room to run
- * - only the strongest few zones of each type are kept
+ * Shared pipeline behind both detectZones (the live chart's view: only
+ * currently-active zones, filtered and capped down to the strongest few)
+ * and detectZoneHistory (the trade-history backtest's view: every zone that
+ * ever validly formed, broken or not, uncapped). Runs validation ("اثبات"),
+ * merging, scoring, and the room-to-run filter — everything that doesn't
+ * depend on whether a zone has since broken or is still near the price.
  */
-export function detectZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
+function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): EvaluatedZonesResult {
   const {
     swingLookback = 2,
     atrPeriod = 14,
@@ -360,12 +358,12 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     minOpposingZoneDistanceRatio = 2,
     maxBaseSize = 6,
     maxValidationDepth = 6,
-    maxDemandZones = 3,
-    maxSupplyZones = 2,
     higherTimeframeCandles = null,
   } = options;
 
-  if (candles.length < swingLookback * 2 + 2) return [];
+  if (candles.length < swingLookback * 2 + 2) {
+    return { all: [], activeOnly: [], currentPrice: candles[candles.length - 1]?.close ?? 0, minDistanceFromPrice: 0 };
+  }
 
   const swings = detectSwingPoints(candles, swingLookback);
   const trendlines = detectTrendlines(candles, swings);
@@ -475,6 +473,9 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     return nearbyHtf.type === zone.type ? "aligned" : "opposing";
   }
 
+  // Every validated candidate gets evaluated and scored, whether it's still
+  // active or has since broken — detectZoneHistory needs the broken ones
+  // too, for a full backtest of what would have traded and how it resolved.
   const evaluatedZones: (Zone & { pivotIndex: number })[] = [];
   for (const candidate of merged) {
     const { active, testCount, hasQuickReturn } = evaluateZoneRange(
@@ -484,15 +485,6 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
       candidate.bottom,
       candidate.pivotIndex
     );
-    if (!active) continue;
-
-    const distanceToPrice =
-      currentPrice >= candidate.bottom && currentPrice <= candidate.top
-        ? 0
-        : currentPrice > candidate.top
-          ? currentPrice - candidate.top
-          : candidate.bottom - currentPrice;
-    if (distanceToPrice < minDistanceFromPrice) continue;
 
     const htfConfluence = htfConfluenceFor(candidate);
     const { score, strength } = scoreZone(candidate, testCount, hasQuickReturn, htfConfluence);
@@ -519,7 +511,8 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
 
   // Condition 4: reject a zone if an opposing zone on its target side sits
   // closer than `minOpposingZoneDistanceRatio` times its own height — no
-  // room left to run before hitting resistance/support.
+  // room left to run before hitting resistance/support. Applies regardless
+  // of whether the zone is still active.
   const withRoomToRun = evaluatedZones.filter((zone) => {
     const zoneHeight = zone.top - zone.bottom;
     const opposing = evaluatedZones.filter((other) => other.type !== zone.type);
@@ -532,11 +525,48 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
     return distance >= zoneHeight * minOpposingZoneDistanceRatio;
   });
 
+  const activeOnly = withRoomToRun.filter((zone) => {
+    if (!zone.active) return false;
+    const distanceToPrice =
+      currentPrice >= zone.bottom && currentPrice <= zone.top
+        ? 0
+        : currentPrice > zone.top
+          ? currentPrice - zone.top
+          : zone.bottom - currentPrice;
+    return distanceToPrice >= minDistanceFromPrice;
+  });
+
+  return { all: withRoomToRun, activeOnly, currentPrice, minDistanceFromPrice };
+}
+
+/**
+ * Detects supply (resistance) and demand (support) zones with a
+ * Base-and-Impulse model, gated by a validation ("اثبات") pass before
+ * anything is scored or drawn, then scored by freshness, impulse size, base
+ * quality, breakout cleanliness, retest behavior, and (optionally)
+ * higher-timeframe confluence:
+ * - a zone whose origin impulse isn't validated (no trendline break, no
+ *   validated opposing zone broken, no new historical extreme) is dropped
+ *   outright — it never gets drawn
+ * - broken zones (a full candle closes decisively through them) are dropped
+ *   entirely rather than kept around for historical context
+ * - near-duplicate zones of the same type (within half an ATR of each
+ *   other) are merged into one
+ * - zones sitting within half an ATR of the current price are dropped as
+ *   impractically close to trade
+ * - a zone with a closer opposing zone on its target side than 2x its own
+ *   height is dropped — no room to run
+ * - only the strongest few zones of each type are kept
+ */
+export function detectZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
+  const { maxDemandZones = 3, maxSupplyZones = 2 } = options;
+  const { activeOnly } = computeEvaluatedZones(candles, options);
+
   const capped: Zone[] = [];
   for (const type of ["demand", "supply"] as const) {
     const max = type === "demand" ? maxDemandZones : maxSupplyZones;
     capped.push(
-      ...withRoomToRun
+      ...activeOnly
         .filter((z) => z.type === type)
         .sort((a, b) => b.strengthScore - a.strengthScore || a.testCount - b.testCount)
         .slice(0, max)
@@ -549,4 +579,17 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
   }
 
   return capped.sort((a, b) => a.startTime - b.startTime);
+}
+
+/**
+ * Every zone that ever validly formed in this candle history, broken or
+ * not, uncapped — for backtesting the full trade history rather than just
+ * showing today's live setups. Each zone keeps its `pivotIndex` (the last
+ * base candle) so a backtest can replay forward from the moment it formed.
+ */
+export function detectZoneHistory(
+  candles: Candle[],
+  options: DetectZonesOptions = {}
+): (Zone & { pivotIndex: number })[] {
+  return computeEvaluatedZones(candles, options).all;
 }

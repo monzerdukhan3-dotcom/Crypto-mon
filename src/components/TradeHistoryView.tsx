@@ -1,18 +1,17 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { CircleCheckBig, Layers, Loader2, RefreshCw, TrendingUp, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { TIMEFRAMES, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
-import { evaluateTradeOutcome, loadTradeHistory, saveTradeHistory, type TradeRecord } from "@/lib/tradeHistory";
-import type { Candle } from "@/lib/types";
+import type { TradeRecord } from "@/lib/tradeHistory";
+import type { SymbolInfo } from "@/lib/constants";
 
-async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Candle[]> {
-  const res = await fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`);
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error ?? "فشل تحميل البيانات");
-  return json.candles as Candle[];
-}
+// Fetched in small batches rather than all 160 (40 coins × 4 timeframes) at
+// once, so the browser isn't holding that many concurrent requests open —
+// each request is still independently cached server-side, so a second
+// visitor (or this same page, refreshed) gets most of them instantly.
+const BATCH_SIZE = 8;
 
 function formatDate(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString("ar", { dateStyle: "medium", timeStyle: "short" });
@@ -43,12 +42,28 @@ const TONE_CLASSES: Record<"success" | "danger" | "muted", string> = {
   muted: "bg-surface-border text-muted",
 };
 
-function StatCard({ label, value, tone }: { label: string; value: string; tone?: "success" | "danger" }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Layers;
+  label: string;
+  value: string;
+  tone?: "success" | "danger";
+}) {
   const valueClass = tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : "text-foreground";
+  const badgeClass = tone === "success" ? "bg-success-soft text-success" : tone === "danger" ? "bg-danger-soft text-danger" : "bg-info-soft text-info";
   return (
-    <div className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm">
-      <p className="text-xs text-muted">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${valueClass}`}>{value}</p>
+    <div className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
+      <div className="flex items-center gap-2">
+        <span className={`flex h-6 w-6 items-center justify-center rounded-md ${badgeClass}`}>
+          <Icon className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </span>
+        <p className="text-xs text-muted">{label}</p>
+      </div>
+      <p className={`mt-2 text-2xl font-bold ${valueClass}`}>{value}</p>
     </div>
   );
 }
@@ -57,7 +72,7 @@ function TradeRecordRow({ record }: { record: TradeRecord }) {
   const info = statusInfo(record);
 
   return (
-    <li className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm">
+    <li className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-foreground">{record.symbol}</span>
@@ -91,53 +106,56 @@ function TradeRecordRow({ record }: { record: TradeRecord }) {
   );
 }
 
+async function fetchPairHistory(symbol: string, timeframe: Timeframe): Promise<TradeRecord[]> {
+  try {
+    const res = await fetch(`/api/trade-history?symbol=${symbol}&timeframe=${timeframe}`);
+    if (!res.ok) return [];
+    const json = await res.json();
+    return Array.isArray(json.records) ? (json.records as TradeRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function TradeHistoryView() {
   const [records, setRecords] = useState<TradeRecord[] | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
     async function run() {
-      const history = loadTradeHistory();
+      const symbolsRes = await fetch("/api/symbols")
+        .then((r) => r.json())
+        .catch(() => null);
+      const symbols: SymbolInfo[] = Array.isArray(symbolsRes?.symbols) ? symbolsRes.symbols : [];
       if (cancelled) return;
-      setRecords(history);
+      if (symbols.length === 0) {
+        setRecords([]);
+        return;
+      }
 
-      const pending = history.filter((r) => !r.resolved);
-      if (pending.length === 0) return;
+      const pairs = symbols.flatMap((s) => TIMEFRAMES.map((t) => ({ symbol: s.symbol, timeframe: t.value })));
+      setProgress({ done: 0, total: pairs.length });
 
-      setRefreshing(true);
-      const uniquePairs = Array.from(new Set(pending.map((r) => `${r.symbol}:${r.timeframe}`)));
-      const candleSets = new Map<string, Candle[]>();
+      const collected: TradeRecord[] = [];
+      for (let i = 0; i < pairs.length; i += BATCH_SIZE) {
+        if (cancelled) return;
+        const batch = pairs.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(batch.map((p) => fetchPairHistory(p.symbol, p.timeframe)));
+        for (const r of results) collected.push(...r);
+        setProgress({ done: Math.min(i + BATCH_SIZE, pairs.length), total: pairs.length });
+      }
 
-      await Promise.all(
-        uniquePairs.map(async (key) => {
-          const [sym, tf] = key.split(":") as [string, Timeframe];
-          try {
-            candleSets.set(key, await fetchCandleSet(sym, tf));
-          } catch {
-            // Leave this pair's records at their last known state.
-          }
-        })
-      );
-      if (cancelled) return;
-
-      const updated = history.map((r) => {
-        if (r.resolved) return r;
-        const candles = candleSets.get(`${r.symbol}:${r.timeframe}`);
-        return candles ? evaluateTradeOutcome(r, candles) : r;
-      });
-
-      saveTradeHistory(updated);
-      setRecords(updated);
-      setRefreshing(false);
+      if (!cancelled) setRecords(collected);
     }
 
     run();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const sorted = useMemo(() => [...(records ?? [])].sort((a, b) => b.loggedAt - a.loggedAt), [records]);
 
@@ -154,50 +172,55 @@ export default function TradeHistoryView() {
     return { total: sorted.length, wins, losses, winRate };
   }, [sorted]);
 
-  function clearHistory() {
-    saveTradeHistory([]);
-    setRecords([]);
-  }
-
-  if (records === null) {
-    return <p className="text-sm text-muted">جاري التحميل...</p>;
-  }
+  const loading = records === null;
 
   return (
     <div className="flex w-full max-w-4xl flex-col gap-6">
-      <div className="rounded-xl border border-surface-border bg-surface p-5 shadow-sm">
+      <div className="relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
+        <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <p className="text-sm leading-relaxed text-muted">
-          هذا السجل محفوظ محليًا داخل متصفحك فقط (localStorage) — لا يُشارك مع زوار آخرين ويُفقد لو مسحت بيانات
-          المتصفح أو بدّلت جهازًا. يُسجَّل كل إعداد صفقة جديد تلقائيًا عند ظهوره، ويُعاد تقييمه مقابل آخر 200 شمعة
-          متاحة لكل عملة وفريم زمني.
-          {refreshing && " جاري تحديث النتائج الآن..."}
+          هذا السجل محسوب تلقائيًا من بيانات السوق العامة نفسها لأعلى 40 عملة على كل الأطر الزمنية الأربعة — وليس
+          محفوظًا في متصفحك، فهو مطابق لكل الزوار على أي جهاز أو متصفح. كل إعداد صفقة تحقّقت فيه العودة الفعلية
+          لمنطقة الطلب يُحتسب تلقائيًا ويُقيَّم مقابل آخر 200 شمعة لكل عملة وفريم زمني، ويتجدد تلقائيًا كل بضع
+          دقائق.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="الإجمالي" value={String(stats.total)} />
-        <StatCard label="تحقّقت أهدافها" value={String(stats.wins)} tone="success" />
-        <StatCard label="وقف خسارة" value={String(stats.losses)} tone="danger" />
-        <StatCard label="نسبة النجاح" value={stats.winRate !== null ? `${stats.winRate}%` : "—"} />
+        <StatCard icon={Layers} label="الإجمالي" value={loading ? "—" : String(stats.total)} />
+        <StatCard icon={CircleCheckBig} label="تحقّقت أهدافها" value={loading ? "—" : String(stats.wins)} tone="success" />
+        <StatCard icon={XCircle} label="وقف خسارة" value={loading ? "—" : String(stats.losses)} tone="danger" />
+        <StatCard
+          icon={TrendingUp}
+          label="نسبة النجاح"
+          value={!loading && stats.winRate !== null ? `${stats.winRate}%` : "—"}
+        />
       </div>
 
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-foreground">السجل ({sorted.length})</h2>
-        {sorted.length > 0 && (
-          <button
-            onClick={clearHistory}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger-soft"
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={2.25} />
-            حذف السجل
-          </button>
-        )}
+        <h2 className="font-semibold text-foreground">السجل {loading ? "" : `(${sorted.length})`}</h2>
+        <button
+          onClick={() => {
+            setRecords(null);
+            setReloadKey((k) => k + 1);
+          }}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-150 hover:bg-background hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={2.25} />
+          تحديث
+        </button>
       </div>
 
-      {sorted.length === 0 ? (
-        <p className="text-sm text-muted">
-          لا توجد صفقات مسجّلة بعد — ستُضاف تلقائيًا كل ما اقترح الموقع صفقة جديدة أثناء تصفّحك.
-        </p>
+      {loading ? (
+        <div className="flex flex-col items-center gap-3 py-10 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-success" strokeWidth={2.25} />
+          جاري تحميل سجل الصفقات
+          {progress.total > 0 && ` (${progress.done}/${progress.total})`}
+          ...
+        </div>
+      ) : sorted.length === 0 ? (
+        <p className="text-sm text-muted">لم يتحقق أي إعداد صفقة بعد ضمن آخر 200 شمعة المتاحة لأي عملة مدعومة.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {sorted.map((r) => (
