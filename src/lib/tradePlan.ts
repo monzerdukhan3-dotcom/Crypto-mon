@@ -13,27 +13,25 @@ export interface BuildTradePlanOptions {
   targetRMultiples?: number[];
   /** Minimum acceptable reward:risk on the first target — reject the setup below this. */
   minFirstTargetRR?: number;
-  /** How close price must already be to a zone (in ATR units) before it counts as a live setup, not just a level to watch. */
-  maxEntryDistanceAtrRatio?: number;
 }
 
 /**
- * Builds an automatic trade plan off the nearest active demand zone below the
- * current price — but only once price has actually come back within reach of
- * it. A zone only forms after its impulse leaves it, so a demand zone still
- * has to be waited on: there's no "entry" the moment it forms while price is
- * off making that impulse move elsewhere, only once it returns. A zone
- * sitting many ATRs below the current price is a level to watch, not a live
- * setup, so it's excluded here even though it's still a perfectly valid
- * zone for the sidebar's zone list.
+ * Builds an automatic trade plan off the nearest active demand zone price
+ * has actually returned to — not merely come close to. A zone only forms
+ * after its impulse leaves it, so it still has to be waited on: there's no
+ * "entry" the moment it forms (or while price is still off making that
+ * impulse move elsewhere), only once price is back at or inside the zone
+ * itself. A zone price hasn't returned to yet is a level to watch (see
+ * findApproachingDemandZone), not a live setup, so it's excluded here even
+ * though it's still a perfectly valid zone for the sidebar's zone list.
  *
  * Entry sits at the zone's top (where a pullback first tags it), stop loss
  * just under the zone's bottom, and 3 ascending targets that prefer real
  * active supply zones above entry, falling back to risk-multiples when
- * there aren't enough of those. Returns null if there's no zone within
- * reach, or if the first target's reward:risk doesn't clear the minimum bar
- * — a technically strong zone still isn't a trade if the setup itself is
- * poor.
+ * there aren't enough of those. Returns null if price hasn't returned to
+ * any zone yet, or if the first target's reward:risk doesn't clear the
+ * minimum bar — a technically strong zone still isn't a trade if the setup
+ * itself is poor.
  */
 export function buildTradePlan(
   zones: Zone[],
@@ -41,24 +39,14 @@ export function buildTradePlan(
   candles: Candle[],
   options: BuildTradePlanOptions = {}
 ): TradePlan | null {
-  const {
-    stopBufferRatio = 0.15,
-    targetRMultiples = [1.5, 2.5, 4],
-    minFirstTargetRR = 1,
-    maxEntryDistanceAtrRatio = 2,
-  } = options;
+  const { stopBufferRatio = 0.15, targetRMultiples = [1.5, 2.5, 4], minFirstTargetRR = 1 } = options;
 
-  const referenceAtr = latestAtr(candles);
-  const maxEntryDistance = referenceAtr !== null ? referenceAtr * maxEntryDistanceAtrRatio : Infinity;
+  const reachedDemandZones = zones.filter((z) => z.type === "demand" && z.active && currentPrice <= z.top);
+  if (reachedDemandZones.length === 0) return null;
 
-  const activeDemandZonesBelow = zones.filter(
-    (z) => z.type === "demand" && z.active && z.top < currentPrice && currentPrice - z.top <= maxEntryDistance
-  );
-  if (activeDemandZonesBelow.length === 0) return null;
-
-  const nearest = activeDemandZonesBelow.reduce((closest, zone) =>
-    zone.top > closest.top ? zone : closest
-  );
+  // The shallowest zone price has reached — the one whose top is closest
+  // to (just above, or at) the current price.
+  const nearest = reachedDemandZones.reduce((closest, zone) => (zone.top < closest.top ? zone : closest));
 
   const entry = nearest.top;
   const zoneHeight = nearest.top - nearest.bottom;
@@ -86,29 +74,29 @@ export function buildTradePlan(
 
 /**
  * The nearest active demand zone price is heading toward but hasn't
- * actually reached yet — further out than buildTradePlan's own live-setup
- * range, but close enough to be worth flagging so a limit buy order can be
- * queued at the zone's top ahead of the return, instead of only finding out
- * once price is already there. Returns null once a real trade plan exists
- * (that already covers it) or once nothing sits within the watch range.
+ * actually reached yet — anything price is still above counts, right up to
+ * (but not including) the zone itself, since buildTradePlan takes over the
+ * instant price reaches it. Close enough to be worth flagging so a limit
+ * buy order can be queued at the zone's top ahead of the return, instead of
+ * only finding out once price is already there. Returns null once a real
+ * trade plan exists (that already covers it) or once nothing sits within
+ * the watch range.
  */
 export function findApproachingDemandZone(
   zones: Zone[],
   currentPrice: number,
   candles: Candle[],
-  options: { maxEntryDistanceAtrRatio?: number; watchDistanceAtrRatio?: number } = {}
+  options: { watchDistanceAtrRatio?: number } = {}
 ): Zone | null {
-  const { maxEntryDistanceAtrRatio = 2, watchDistanceAtrRatio = 6 } = options;
+  const { watchDistanceAtrRatio = 6 } = options;
 
   const referenceAtr = latestAtr(candles);
   if (referenceAtr === null) return null;
-  const minDistance = referenceAtr * maxEntryDistanceAtrRatio;
   const maxDistance = referenceAtr * watchDistanceAtrRatio;
 
   const candidates = zones.filter((z) => {
     if (z.type !== "demand" || !z.active || z.top >= currentPrice) return false;
-    const distance = currentPrice - z.top;
-    return distance > minDistance && distance <= maxDistance;
+    return currentPrice - z.top <= maxDistance;
   });
   if (candidates.length === 0) return null;
 
