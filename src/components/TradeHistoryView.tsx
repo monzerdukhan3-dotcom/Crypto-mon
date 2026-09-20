@@ -179,8 +179,8 @@ export default function TradeHistoryView() {
       <div className="relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <p className="text-sm leading-relaxed text-muted">
-          بيانات حقيقية 100% من نفس السوق الحي — ليست تجربة أو محاكاة. يُحتسب تلقائيًا لأعلى 40 عملة على الأطر
-          الزمنية الأربعة كلها بمجرد أن يعود السعر فعليًا لمنطقة طلب، ويُقيَّم مقابل آخر 200 شمعة حقيقية لكل عملة
+          بيانات حقيقية 100% من نفس السوق الحي — ليست تجربة أو محاكاة. يُحتسب تلقائيًا لأعلى 60 عملة على الأطر
+          الزمنية الأربعة كلها بمجرد أن يعود السعر فعليًا لمنطقة طلب، ويُقيَّم مقابل آخر 250 شمعة حقيقية لكل عملة
           وفريم زمني. السجل يبدأ من الآن فصاعدًا فقط — لا صفقات قديمة قبل تفعيل هذا السجل — وليس محفوظًا في
           متصفحك، فهو مطابق لكل الزوار على أي جهاز، ويتجدد تلقائيًا كل بضع دقائق.
         </p>

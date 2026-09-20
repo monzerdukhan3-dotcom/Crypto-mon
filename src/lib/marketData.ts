@@ -36,7 +36,7 @@ interface CryptoComCandlestickResponse {
 // Default number of candles to fetch. Zone detection needs enough history
 // that older (but still active) supply/demand zones aren't cut off the left
 // edge of the chart; Crypto.com's endpoint accepts up to 300.
-const DEFAULT_CANDLE_COUNT = 200;
+const DEFAULT_CANDLE_COUNT = 250;
 
 /**
  * Fetches real OHLCV candles from Crypto.com Exchange's public market-data

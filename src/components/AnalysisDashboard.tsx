@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
@@ -126,51 +126,77 @@ export default function AnalysisDashboard() {
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
-      <div className="relative flex flex-col gap-4 overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row">
+      <div
+        className="animate-fade-in-up relative flex flex-col gap-4 overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row"
+        style={{ animationDelay: "60ms" }}
+      >
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           العملة
-          <select
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value as Symbol)}
-            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
-          >
-            {availableSymbols.map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          <span className="relative">
+            <select
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value as Symbol)}
+              className="w-full appearance-none rounded-lg border border-surface-border bg-background px-3 py-2 pr-9 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
+            >
+              {availableSymbols.map((s) => (
+                <option key={s.symbol} value={s.symbol}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" strokeWidth={2.25} />
+          </span>
         </label>
 
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           الفريم الزمني
-          <select
-            value={timeframe}
-            onChange={(e) => setTimeframe(e.target.value as Timeframe)}
-            className="rounded-lg border border-surface-border bg-background px-3 py-2 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
-          >
-            {TIMEFRAMES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+          <span className="relative">
+            <select
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value as Timeframe)}
+              className="w-full appearance-none rounded-lg border border-surface-border bg-background px-3 py-2 pr-9 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
+            >
+              {TIMEFRAMES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" strokeWidth={2.25} />
+          </span>
         </label>
       </div>
 
-      <p className="rounded-lg border border-surface-border bg-surface/60 px-4 py-2.5 text-xs leading-relaxed text-muted">
-        القائمة تضم أعلى 40 عملة سيولة وحجم تداول على المنصة، مع استبعاد اجتهادي لعملات القمار والميمز الصرفة —
+      <p
+        className="animate-fade-in-up rounded-lg border border-surface-border bg-surface/60 px-4 py-2.5 text-xs leading-relaxed text-muted"
+        style={{ animationDelay: "120ms" }}
+      >
+        القائمة تضم أعلى 60 عملة سيولة وحجم تداول على المنصة، مع استبعاد اجتهادي لعملات القمار والميمز الصرفة —
         هذا اجتهاد تقني وليس فتوى شرعية معتمدة؛ راجع مصدرًا موثوقًا قبل الاعتماد عليه في قرار الاستثمار.
       </p>
 
       <div className="flex flex-col gap-5 lg:flex-row">
-        <div className="relative h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm transition-shadow duration-200 hover:shadow-md lg:h-[560px] lg:flex-1">
+        <div
+          className="animate-fade-in-up relative h-96 shrink-0 overflow-hidden rounded-xl border border-surface-border bg-surface p-2 shadow-sm transition-shadow duration-200 hover:shadow-md lg:h-[560px] lg:flex-1"
+          style={{ animationDelay: "180ms" }}
+        >
           <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0.5 bg-gradient-to-r from-info via-success to-info" />
           {status === "loading" && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted">
-              <Loader2 className="h-5 w-5 animate-spin text-success" strokeWidth={2.25} />
-              جاري تحميل بيانات {symbol}...
+            <div className="flex h-full flex-col gap-4 p-4">
+              <div className="flex flex-1 items-end gap-1.5">
+                {[38, 62, 45, 78, 55, 90, 48, 70, 58, 82, 40, 65].map((h, i) => (
+                  <div
+                    key={i}
+                    className="animate-shimmer flex-1 rounded-sm"
+                    style={{ height: `${h}%`, animationDelay: `${i * 60}ms` }}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-center gap-2 text-sm text-muted">
+                <Loader2 className="h-4 w-4 animate-spin text-success" strokeWidth={2.25} />
+                جاري تحميل بيانات {symbol}...
+              </div>
             </div>
           )}
           {status === "error" && (
@@ -190,17 +216,19 @@ export default function AnalysisDashboard() {
         </div>
 
         {status === "ready" && currentPrice !== null && (
-          <ZonesSidebar
-            symbol={symbol}
-            zones={zones}
-            tradePlan={tradePlan}
-            approachingZone={approachingZone}
-            tradeProgress={tradeProgress}
-            confidence={confidence}
-            technicalSummary={technicalSummary}
-            currentPrice={currentPrice}
-            volatility={volatility}
-          />
+          <div className="animate-fade-in-up w-full lg:w-80" style={{ animationDelay: "240ms" }}>
+            <ZonesSidebar
+              symbol={symbol}
+              zones={zones}
+              tradePlan={tradePlan}
+              approachingZone={approachingZone}
+              tradeProgress={tradeProgress}
+              confidence={confidence}
+              technicalSummary={technicalSummary}
+              currentPrice={currentPrice}
+              volatility={volatility}
+            />
+          </div>
         )}
       </div>
     </div>

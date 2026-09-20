@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { DEFAULT_SYMBOLS, type SymbolInfo } from "@/lib/constants";
 import { getTopSymbolsByVolume } from "@/lib/marketData";
 
-const TOP_SYMBOLS_LIMIT = 40;
+const TOP_SYMBOLS_LIMIT = 60;
 
 export async function GET() {
   try {
