@@ -196,13 +196,22 @@ function mergeCluster(cluster: ZoneCandidate[]): ZoneCandidate {
 
 /**
  * Merges same-type candidates whose ranges are within `threshold` of each
- * other. Each cluster is anchored to a fixed seed (its lowest candidate) and
- * new members are only admitted if they're close to that seed — comparing
- * against the seed rather than the cluster's own growing bounds prevents a
- * long run of candidates from chain-merging into one zone spanning the
- * entire price range.
+ * other AND whose pivots are within `maxCandleGap` candles of each other.
+ * Both have to hold: a market that ranges for a long time keeps forming new
+ * bases at a similar price purely by chance, and without the time bound
+ * those would all merge into one box spanning the entire range — taller and
+ * older than any of them individually, which both misrepresents the level
+ * and can fail the room-to-run check (condition 4) for a fresh zone that
+ * would've passed it fine on its own. The bound is generous on purpose
+ * (a genuine retest of the same short-lived structure, just detected off a
+ * slightly different swing candle) without reaching across what's really a
+ * separate, independently-validated base+impulse weeks later. Each cluster
+ * is anchored to a fixed seed (its lowest candidate) and new members are
+ * only admitted if they're close to that seed — comparing against the seed
+ * rather than the cluster's own growing bounds prevents a long run of
+ * candidates from chain-merging into one zone spanning the entire range.
  */
-function mergeCloseCandidates(candidates: ZoneCandidate[], threshold: number): ZoneCandidate[] {
+function mergeCloseCandidates(candidates: ZoneCandidate[], threshold: number, maxCandleGap: number): ZoneCandidate[] {
   const result: ZoneCandidate[] = [];
 
   for (const type of ["demand", "supply"] as const) {
@@ -211,7 +220,11 @@ function mergeCloseCandidates(candidates: ZoneCandidate[], threshold: number): Z
     let cluster: ZoneCandidate[] = [];
 
     for (const candidate of group) {
-      if (seed && zonesGap(seed, candidate) <= threshold) {
+      const canMerge =
+        seed !== null &&
+        zonesGap(seed, candidate) <= threshold &&
+        Math.abs(candidate.pivotIndex - seed.pivotIndex) <= maxCandleGap;
+      if (canMerge) {
         cluster.push(candidate);
       } else {
         if (cluster.length > 0) result.push(mergeCluster(cluster));
@@ -448,25 +461,28 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
     if (impulseMove < zoneHeight * minImpulseToZoneHeightRatio) continue;
     const impulseMoveAtr = referenceAtr !== null && referenceAtr > 0 ? impulseMove / referenceAtr : 0;
 
-    // Professional Order Block filters — all must hold:
+    // Professional Order Block filters — all must hold. Checked across the
+    // first few window candles rather than strictly window[0]/window[0:2]:
+    // the real breakout doesn't always fire on the very next candle after
+    // the swing pivot — a candle or two of continued drift before it
+    // ignites is normal and shouldn't disqualify an otherwise clean move.
+    const impulseStart = window.slice(0, Math.min(3, window.length));
     // 1. The breakout candle(s) must be unusually large (real conviction, not drift).
     if (datasetAvgBody > 0) {
-      const firstBody = Math.abs(window[0].close - window[0].open);
-      const firstTwoBody =
-        window.length >= 2 ? firstBody + Math.abs(window[1].close - window[1].open) : firstBody;
-      const hasStrongImpulseCandle =
-        firstBody > datasetAvgBody * minImpulseBodyRatio || firstTwoBody > datasetAvgBody * minImpulseBodyRatio;
+      const bodies = impulseStart.map((c) => Math.abs(c.close - c.open));
+      const hasStrongImpulseCandle = bodies.some(
+        (_, i) => bodies.slice(0, i + 1).reduce((sum, b) => sum + b, 0) > datasetAvgBody * minImpulseBodyRatio
+      );
       if (!hasStrongImpulseCandle) continue;
     }
     // 2. The break must be a close beyond the base, not just a wick poking through.
     const closesBeyondBase = isDemand ? window.some((c) => c.close > top) : window.some((c) => c.close < bottom);
     if (!closesBeyondBase) continue;
-    // 3. The breakout candle itself must be clean (mostly body, not mostly wick).
-    if (bodyToRangeRatio(window[0]) <= minImpulseBodyToWickRatio) continue;
+    // 3. At least one of those early candles must itself be clean (mostly body, not mostly wick).
+    if (!impulseStart.some((c) => bodyToRangeRatio(c) > minImpulseBodyToWickRatio)) continue;
 
-    const cleanlinessSample = window.slice(0, Math.min(3, window.length));
     const impulseCleanliness =
-      cleanlinessSample.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / cleanlinessSample.length;
+      impulseStart.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / impulseStart.length;
     const baseBodyRatio = baseCandles.reduce((sum, c) => sum + bodyToRangeRatio(c), 0) / baseCandles.length;
 
     const volumeSample = [...baseCandles, ...window.slice(0, Math.min(2, window.length))];
@@ -497,7 +513,7 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
     }
   }
   const mergeThreshold = referenceAtr !== null ? referenceAtr * mergeDistanceAtrRatio : 0;
-  const merged = mergeCloseCandidates(validated, mergeThreshold);
+  const merged = mergeCloseCandidates(validated, mergeThreshold, impulseLookahead * 2);
 
   const currentPrice = candles[candles.length - 1].close;
   const minDistanceFromPrice = referenceAtr !== null ? referenceAtr * minDistanceFromPriceAtrRatio : 0;
@@ -564,13 +580,15 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
     });
   }
 
-  // Condition 4: reject a zone if an opposing zone on its target side sits
-  // closer than `minOpposingZoneDistanceRatio` times its own height — no
-  // room left to run before hitting resistance/support. Applies regardless
-  // of whether the zone is still active.
+  // Condition 4: reject a zone if a still-active opposing zone on its
+  // target side sits closer than `minOpposingZoneDistanceRatio` times its
+  // own height — no room left to run before hitting resistance/support.
+  // An opposing zone price has already closed decisively through isn't a
+  // live obstacle anymore, so it's excluded here even though it's still
+  // included (as broken) in detectZoneHistory's own output.
   const withRoomToRun = evaluatedZones.filter((zone) => {
     const zoneHeight = zone.top - zone.bottom;
-    const opposing = evaluatedZones.filter((other) => other.type !== zone.type);
+    const opposing = evaluatedZones.filter((other) => other.type !== zone.type && other.active);
     const nearestOpposing =
       zone.type === "demand"
         ? opposing.filter((o) => o.bottom > zone.top).sort((a, b) => a.bottom - b.bottom)[0]
