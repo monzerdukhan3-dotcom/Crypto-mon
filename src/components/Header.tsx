@@ -1,6 +1,7 @@
 import { History, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {
   return (
@@ -31,6 +32,7 @@ export default function Header() {
             <Settings className="h-4 w-4" strokeWidth={2.25} />
             الإعدادات
           </Link>
+          <ThemeToggle />
         </div>
       </div>
     </header>

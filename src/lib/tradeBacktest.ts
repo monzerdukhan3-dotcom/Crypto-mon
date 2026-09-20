@@ -6,6 +6,16 @@ import type { Candle } from "./types";
 import { detectZoneHistory } from "./zones";
 
 /**
+ * Only entries from this moment onward count — 2026-09-20T11:21:37Z, when
+ * the trade history switched from a per-browser localStorage log to this
+ * server-computed backtest. Zones detected from older candles still count
+ * (a zone that formed a while ago and is only being returned to now is a
+ * perfectly real, current entry); what's excluded is a *return* the replay
+ * finds before this cutoff, which nobody was ever actually shown live.
+ */
+const HISTORY_START_TIME = 1789903297;
+
+/**
  * Replays this symbol+timeframe's own candle history to reconstruct every
  * trade the site would have proposed, deterministically — no stored state
  * needed, since it's rebuilt fresh from the same public candles everyone
@@ -38,6 +48,7 @@ export function backtestTradeHistory(symbol: string, timeframe: Timeframe, candl
       }
     }
     if (entryIndex === -1) continue; // price never actually came back to this zone
+    if (candles[entryIndex].time < HISTORY_START_TIME) continue;
 
     const plan = planFromZone(zone, zones);
     if (!plan) continue;
