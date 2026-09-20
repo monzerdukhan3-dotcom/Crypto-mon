@@ -41,6 +41,12 @@ export interface Zone {
   testCount: number;
   /** False once price has closed decisively through the zone. */
   active: boolean;
+  /**
+   * True when a same-type zone on the higher timeframe actually shares
+   * price with this one (not just nearby) — the "تداخل المناطق" condition
+   * that overrides a broken/bearish entry-timeframe trend.
+   */
+  htfOverlap: boolean;
 }
 
 /** An automatically generated trade plan based on the nearest active demand zone. */

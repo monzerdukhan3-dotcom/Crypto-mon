@@ -1,4 +1,5 @@
 import { calculateATR } from "./indicators";
+import { detectTrend } from "./trend";
 import type { Candle, TradePlan, Zone } from "./types";
 
 function latestAtr(candles: Candle[], period = 14): number | null {
@@ -66,14 +67,29 @@ export function planFromZone(
  * itself. A zone price hasn't returned to yet is a level to watch (see
  * findApproachingDemandZone), not a live setup, so it's excluded here even
  * though it's still a perfectly valid zone for the sidebar's zone list.
+ *
+ * "تداخل المناطق": when this timeframe's own trend isn't clearly up, a
+ * demand zone here is only safe to buy if it overlaps a same-type zone on
+ * the higher timeframe (zone.htfOverlap) — real support from above, not
+ * just this timeframe's own read. With a healthy uptrend that confirmation
+ * isn't required.
  */
-export function buildTradePlan(zones: Zone[], currentPrice: number, options: BuildTradePlanOptions = {}): TradePlan | null {
+export function buildTradePlan(
+  zones: Zone[],
+  currentPrice: number,
+  candles: Candle[],
+  options: BuildTradePlanOptions = {}
+): TradePlan | null {
   const reachedDemandZones = zones.filter((z) => z.type === "demand" && z.active && currentPrice <= z.top);
   if (reachedDemandZones.length === 0) return null;
 
+  const eligible =
+    detectTrend(candles) === "up" ? reachedDemandZones : reachedDemandZones.filter((z) => z.htfOverlap);
+  if (eligible.length === 0) return null;
+
   // The shallowest zone price has reached — the one whose top is closest
   // to (just above, or at) the current price.
-  const nearest = reachedDemandZones.reduce((closest, zone) => (zone.top < closest.top ? zone : closest));
+  const nearest = eligible.reduce((closest, zone) => (zone.top < closest.top ? zone : closest));
 
   return planFromZone(nearest, zones, options);
 }

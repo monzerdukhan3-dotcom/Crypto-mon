@@ -266,14 +266,79 @@ function getImpulseWindow(candles: Candle[], candidate: Pick<RawCandidate, "pivo
   return candles.slice(candidate.pivotIndex + 1, candidate.impulseWindowEnd + 1);
 }
 
+function breaksTrendline(
+  candidate: RawCandidate,
+  window: Candle[],
+  trendlines: TrendlineSegment[]
+): boolean {
+  const isDemand = candidate.type === "demand";
+  const relevantTrendlineType = isDemand ? "resistance" : "support";
+  return window.some((c, offset) => {
+    const absoluteIndex = candidate.pivotIndex + 1 + offset;
+    return trendlines.some((line) => {
+      if (line.type !== relevantTrendlineType) return false;
+      if (line.point2.index > candidate.pivotIndex) return false; // must predate this zone's breakout
+      const projected = trendlineValueAt(line, absoluteIndex);
+      return isDemand ? c.close > projected : c.close < projected;
+    });
+  });
+}
+
+function findBrokenOpposing(
+  candidate: RawCandidate,
+  window: Candle[],
+  validatedSoFar: RawCandidate[]
+): RawCandidate | undefined {
+  const isDemand = candidate.type === "demand";
+  const opposingType: ZoneType = isDemand ? "supply" : "demand";
+  return validatedSoFar.find((other) => {
+    if (other.type !== opposingType) return false;
+    if (other.pivotIndex >= candidate.pivotIndex) return false;
+    // The impulse must close cleanly through the opposing zone's far edge,
+    // not merely overlap its range.
+    return isDemand ? window.some((c) => c.close > other.top) : window.some((c) => c.close < other.bottom);
+  });
+}
+
+/**
+ * The stricter proof required to CITE an opposing zone as the basis for
+ * validating another one (اثبات، تابع — "the zone that was broken must
+ * itself be validated by a trendline break"): a self-validated new extreme
+ * doesn't count here even though it's a perfectly valid zone in its own
+ * right — only an actual trendline break does, whether on this zone
+ * directly or, recursively, on the opposing zone it broke in turn.
+ */
+function isValidatedByTrendlineChain(
+  candidate: RawCandidate,
+  candles: Candle[],
+  trendlines: TrendlineSegment[],
+  validatedSoFar: RawCandidate[],
+  depth: number,
+  maxDepth: number
+): boolean {
+  const window = getImpulseWindow(candles, candidate);
+  if (window.length === 0) return false;
+  if (breaksTrendline(candidate, window, trendlines)) return true;
+
+  if (depth >= maxDepth) return false;
+  const brokenOpposing = findBrokenOpposing(candidate, window, validatedSoFar);
+  if (!brokenOpposing) return false;
+
+  return isValidatedByTrendlineChain(brokenOpposing, candles, trendlines, validatedSoFar, depth + 1, maxDepth);
+}
+
 /**
  * "اثبات المنطقة" — a zone only counts as real if its origin impulse is
  * validated one of three ways:
  * 1. The impulse crosses a trendline (major or minor — any 2+ prior same-
  *    type swings that price hadn't broken before) established before the
  *    zone formed.
- * 2. The impulse breaks clean through an earlier opposing zone that was
- *    itself validated (checked recursively, walking left).
+ * 2. The impulse breaks clean through an earlier opposing zone — but only
+ *    if that opposing zone can itself be traced back to a trendline break
+ *    (isValidatedByTrendlineChain), not merely a self-validated new
+ *    extreme; a historical high/low is strong enough to validate itself,
+ *    but the source material is explicit that it isn't strong enough to
+ *    lend that validation to another zone on its own.
  * 3. The impulse's extreme sets a new high (demand) or low (supply) versus
  *    every candle before it in the fetched history — self-validated, no
  *    further proof needed.
@@ -286,24 +351,13 @@ function isImpulseValidated(
   candles: Candle[],
   trendlines: TrendlineSegment[],
   validatedSoFar: RawCandidate[],
-  depth: number,
   maxDepth: number
 ): boolean {
   const isDemand = candidate.type === "demand";
   const window = getImpulseWindow(candles, candidate);
   if (window.length === 0) return false;
 
-  const relevantTrendlineType = isDemand ? "resistance" : "support";
-  const brokeTrendline = window.some((c, offset) => {
-    const absoluteIndex = candidate.pivotIndex + 1 + offset;
-    return trendlines.some((line) => {
-      if (line.type !== relevantTrendlineType) return false;
-      if (line.point2.index > candidate.pivotIndex) return false; // must predate this zone's breakout
-      const projected = trendlineValueAt(line, absoluteIndex);
-      return isDemand ? c.close > projected : c.close < projected;
-    });
-  });
-  if (brokeTrendline) return true;
+  if (breaksTrendline(candidate, window, trendlines)) return true;
 
   const priorExtreme = isDemand
     ? Math.max(...candles.slice(0, candidate.pivotIndex + 1).map((c) => c.high))
@@ -312,18 +366,10 @@ function isImpulseValidated(
   const setsNewExtreme = isDemand ? impulseExtreme >= priorExtreme : impulseExtreme <= priorExtreme;
   if (setsNewExtreme) return true;
 
-  if (depth >= maxDepth) return false;
-  const opposingType: ZoneType = isDemand ? "supply" : "demand";
-  const brokenOpposing = validatedSoFar.find((other) => {
-    if (other.type !== opposingType) return false;
-    if (other.pivotIndex >= candidate.pivotIndex) return false;
-    // The impulse must close cleanly through the opposing zone's far edge,
-    // not merely overlap its range.
-    return isDemand ? window.some((c) => c.close > other.top) : window.some((c) => c.close < other.bottom);
-  });
+  const brokenOpposing = findBrokenOpposing(candidate, window, validatedSoFar);
   if (!brokenOpposing) return false;
 
-  return isImpulseValidated(brokenOpposing, candles, trendlines, validatedSoFar, depth + 1, maxDepth);
+  return isValidatedByTrendlineChain(brokenOpposing, candles, trendlines, validatedSoFar, 0, maxDepth);
 }
 
 interface EvaluatedZonesResult {
@@ -446,7 +492,7 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
   // check can only cite zones already confirmed valid.
   const validated: RawCandidate[] = [];
   for (const candidate of rawCandidates) {
-    if (isImpulseValidated(candidate, candles, trendlines, validated, 0, maxValidationDepth)) {
+    if (isImpulseValidated(candidate, candles, trendlines, validated, maxValidationDepth)) {
       validated.push(candidate);
     }
   }
@@ -471,6 +517,14 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
     );
     if (!nearbyHtf) return "none";
     return nearbyHtf.type === zone.type ? "aligned" : "opposing";
+  }
+
+  // "تداخل المناطق" — actually sharing a price with a same-type
+  // higher-timeframe zone, not merely sitting nearby like the softer
+  // confluence score above. This is what's allowed to override a broken or
+  // bearish entry-timeframe trend (see buildTradePlan).
+  function htfOverlapFor(zone: { type: ZoneType; top: number; bottom: number }): boolean {
+    return higherTimeframeZones.some((h) => h.type === zone.type && h.bottom <= zone.top && h.top >= zone.bottom);
   }
 
   // Every validated candidate gets evaluated and scored, whether it's still
@@ -505,6 +559,7 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
       impulseMoveAtr: candidate.impulseMoveAtr,
       testCount,
       active,
+      htfOverlap: htfOverlapFor(candidate),
       pivotIndex: candidate.pivotIndex,
     });
   }

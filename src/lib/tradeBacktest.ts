@@ -2,6 +2,7 @@ import type { Timeframe } from "./constants";
 import { planFromZone } from "./tradePlan";
 import { evaluateTradeOutcome, type TradeRecord } from "./tradeHistory";
 import { scoreTradeConfidence } from "./tradeConfidence";
+import { detectTrend } from "./trend";
 import type { Candle } from "./types";
 import { detectZoneHistory } from "./zones";
 
@@ -31,10 +32,15 @@ const HISTORY_START_TIME = 1789903297;
  * result is identical for every visitor and every browser — there's
  * nothing local or per-user about it.
  */
-export function backtestTradeHistory(symbol: string, timeframe: Timeframe, candles: Candle[]): TradeRecord[] {
+export function backtestTradeHistory(
+  symbol: string,
+  timeframe: Timeframe,
+  candles: Candle[],
+  dailyCandles: Candle[] | null = null
+): TradeRecord[] {
   if (candles.length === 0) return [];
 
-  const zones = detectZoneHistory(candles);
+  const zones = detectZoneHistory(candles, { higherTimeframeCandles: dailyCandles });
   const records: TradeRecord[] = [];
 
   for (const zone of zones) {
@@ -49,6 +55,12 @@ export function backtestTradeHistory(symbol: string, timeframe: Timeframe, candl
     }
     if (entryIndex === -1) continue; // price never actually came back to this zone
     if (candles[entryIndex].time < HISTORY_START_TIME) continue;
+
+    // تداخل المناطق: same eligibility gate buildTradePlan applies live —
+    // a broken/non-up trend at entry time needed higher-timeframe overlap
+    // to be a real buy, judged only from what was known as of that candle.
+    const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
+    if (trendAtEntry !== "up" && !zone.htfOverlap) continue;
 
     const plan = planFromZone(zone, zones);
     if (!plan) continue;
