@@ -1,4 +1,4 @@
-import { History, Settings } from "lucide-react";
+import { BellRing, History, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import ThemeToggle from "./ThemeToggle";
@@ -18,6 +18,13 @@ export default function Header() {
         </Link>
 
         <div className="flex items-center gap-1">
+          <Link
+            href="/opportunities"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface hover:text-foreground"
+          >
+            <BellRing className="h-4 w-4" strokeWidth={2.25} />
+            الفرص الآن
+          </Link>
           <Link
             href="/history"
             className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface hover:text-foreground"

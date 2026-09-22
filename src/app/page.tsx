@@ -1,4 +1,5 @@
 import { Sparkles } from "lucide-react";
+import { Suspense } from "react";
 import AnalysisDashboard from "@/components/AnalysisDashboard";
 
 export default function Home() {
@@ -19,7 +20,9 @@ export default function Home() {
           </p>
         </div>
 
-        <AnalysisDashboard />
+        <Suspense fallback={null}>
+          <AnalysisDashboard />
+        </Suspense>
       </main>
     </div>
   );

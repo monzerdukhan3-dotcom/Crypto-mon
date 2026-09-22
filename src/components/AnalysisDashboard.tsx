@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, Loader2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
@@ -30,8 +31,15 @@ async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Can
 }
 
 export default function AnalysisDashboard() {
-  const [symbol, setSymbol] = useState<Symbol>("BTC");
-  const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  // Lets a link from elsewhere (the opportunities page, say) open straight
+  // into the matching chart — read once on mount, not kept in sync with the
+  // URL afterward, so picking a different coin from the dropdown doesn't
+  // fight with it.
+  const searchParams = useSearchParams();
+  const [symbol, setSymbol] = useState<Symbol>(() => searchParams.get("symbol")?.toUpperCase() || "BTC");
+  const [timeframe, setTimeframe] = useState<Timeframe>(
+    () => (TIMEFRAMES.some((t) => t.value === searchParams.get("timeframe")) ? searchParams.get("timeframe") : "1h") as Timeframe
+  );
   const [result, setResult] = useState<FetchResult | null>(null);
   const [availableSymbols, setAvailableSymbols] = useState<SymbolInfo[]>(DEFAULT_SYMBOLS);
 
