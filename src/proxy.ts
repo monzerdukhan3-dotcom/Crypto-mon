@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
-/** Every page and API route requires a signed-in visitor — the whole site is private. */
+/**
+ * Every page and API route requires a signed-in visitor — the whole site is
+ * private. On top of that, /admin (settings + account management) is
+ * restricted further to admin accounts only; a regular visitor account gets
+ * bounced back to the dashboard instead.
+ */
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
+  const isAdmin = Boolean(req.auth?.user?.isAdmin);
   const isLoginPage = req.nextUrl.pathname === "/login";
+  const isAdminRoute = req.nextUrl.pathname === "/admin" || req.nextUrl.pathname.startsWith("/api/admin");
 
   if (!isLoggedIn && !isLoginPage) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
@@ -13,6 +20,10 @@ export default auth((req) => {
   }
 
   if (isLoggedIn && isLoginPage) {
+    return NextResponse.redirect(new URL("/", req.nextUrl.origin));
+  }
+
+  if (isLoggedIn && isAdminRoute && !isAdmin) {
     return NextResponse.redirect(new URL("/", req.nextUrl.origin));
   }
 });

@@ -20,23 +20,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const user = await verifyPassword(email, password);
         if (!user) return null;
 
-        return { id: String(user.id), email: user.email };
+        return { id: String(user.id), email: user.email, isAdmin: user.isAdmin };
       },
     }),
   ],
   callbacks: {
-    // Credentials' authorize() only ever returns { id, email } — carried
-    // into the JWT once at sign-in and echoed back onto the session on
-    // every request, without a DB round-trip per request.
+    // Credentials' authorize() only ever returns { id, email, isAdmin } —
+    // carried into the JWT once at sign-in and echoed back onto the session
+    // on every request, without a DB round-trip per request.
     async jwt({ token, user }) {
       if (user) {
         token.email = user.email;
+        token.isAdmin = Boolean((user as { isAdmin?: boolean }).isAdmin);
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.email = token.email as string;
+        session.user.isAdmin = Boolean(token.isAdmin);
       }
       return session;
     },

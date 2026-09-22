@@ -15,7 +15,11 @@ export function sql() {
   return neon(connectionString());
 }
 
-/** Idempotent — safe to call on every cold start, not just once at setup. */
+/**
+ * Idempotent — safe to call on every cold start, not just once at setup.
+ * is_admin distinguishes the owner/admin tier (full access, including
+ * /admin) from regular visitor accounts (the main pages only).
+ */
 export async function ensureUsersTable(): Promise<void> {
   const db = sql();
   await db`
@@ -23,6 +27,7 @@ export async function ensureUsersTable(): Promise<void> {
       id serial primary key,
       email text unique not null,
       password_hash text not null,
+      is_admin boolean not null default false,
       created_at timestamptz not null default now()
     )
   `;

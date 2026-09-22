@@ -10,12 +10,14 @@ import ThemeToggle from "./ThemeToggle";
 const NAV_ITEMS = [
   { href: "/opportunities", label: "الفرص الآن", icon: BellRing },
   { href: "/history", label: "سجل الصفقات", icon: History },
-  { href: "/admin", label: "الإعدادات", icon: Settings },
 ];
+
+const ADMIN_NAV_ITEM = { href: "/admin", label: "الإعدادات", icon: Settings };
 
 export default function Header() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const navItems = session?.user?.isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <header className="sticky top-0 z-10 border-b border-surface-border bg-background/80 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -33,7 +35,7 @@ export default function Header() {
         </Link>
 
         <nav className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link
