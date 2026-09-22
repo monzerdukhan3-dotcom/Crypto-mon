@@ -10,7 +10,7 @@ import {
 } from "@/lib/studies/access";
 import { MAX_REVISIONS, PHASE_KEYS } from "@/lib/studies/labels";
 import { activeStudy, analysisBlocker, hoursSince, liveTasks, reportFor, taskFiles } from "@/lib/studies/queries";
-import { mutate, newId, newToken, writeUpload } from "@/lib/studies/store";
+import { MAX_UPLOAD_BYTES, mutate, newId, newToken, writeUpload } from "@/lib/studies/store";
 import type { Db, DataFile, IssueKind, Scope, Study } from "@/lib/studies/types";
 
 // Every action re-derives the caller from the token in the submitted form —
@@ -724,7 +724,11 @@ export async function declineTask(form: FormData) {
 }
 
 function uploadedFiles(form: FormData, name: string): File[] {
-  return form.getAll(name).filter((f): f is File => f instanceof File && f.size > 0);
+  const files = form.getAll(name).filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.reduce((sum, f) => sum + f.size, 0) > MAX_UPLOAD_BYTES) {
+    throw new ActionError("حجم الملفات أكبر من المسموح (4MB في المرة الواحدة). ارفعها على دفعات أو اضغطها.");
+  }
+  return files;
 }
 
 async function storeFile(

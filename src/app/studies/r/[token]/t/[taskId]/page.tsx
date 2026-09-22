@@ -114,6 +114,7 @@ export default async function ResearcherTaskPage({ params, searchParams }: PageP
                 <Hidden {...ids} />
                 <input type="file" name="files" multiple className="text-sm" />
                 <SubmitButton>رفع الملفات</SubmitButton>
+                <span className="w-full text-xs text-muted">حتى 4MB في المرة الواحدة.</span>
               </form>
               <form action={completeTask}>
                 <Hidden {...ids} />

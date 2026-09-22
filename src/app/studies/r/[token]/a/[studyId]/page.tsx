@@ -126,7 +126,7 @@ export default async function AnalysisPage({ params, searchParams }: PageProps<"
             />
             <Field label="التوصيات (إن وجدت)" name="recommendations" multiline defaultValue={report.draft.recommendations} />
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-semibold">ملف التقرير بالصيغة المتفق عليها (اختياري)</span>
+              <span className="font-semibold">ملف التقرير بالصيغة المتفق عليها (اختياري، حتى 4MB)</span>
               <input type="file" name="file" className="text-sm" />
               {latest?.fileId && <span className="text-xs text-muted">يُستخدم ملف النسخة السابقة إن لم ترفع ملفًا جديدًا.</span>}
             </label>
