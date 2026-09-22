@@ -11,7 +11,7 @@ export default function OpportunitiesPage() {
           </span>
           <h1 className="text-2xl font-bold text-foreground">الفرص الآن</h1>
           <p className="max-w-md text-center text-sm text-muted">
-            تابع لحظة وصول أي عملة من الـ 48 عملة المدعومة لمنطقة دخول، بدل فتح كل عملة على حدة
+            تابع لحظة وصول أي عملة من الـ 77 عملة المدعومة لمنطقة دخول، بدل فتح كل عملة على حدة
           </p>
         </div>
 

@@ -7,13 +7,13 @@ import { TIMEFRAMES, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import type { OpportunityResult } from "@/app/api/opportunities/route";
 
-// Fetched in small batches rather than all 192 (48 coins × 4 timeframes) at
+// Fetched in small batches rather than all 308 (77 coins × 4 timeframes) at
 // once — each request is still independently cached server-side for a
 // minute, so this is cheap to repeat.
 const BATCH_SIZE = 8;
 // How often to re-scan while this page stays open.
 const REFRESH_MS = 60_000;
-// Cap on how many "approaching" rows to render — with 48 coins × 4
+// Cap on how many "approaching" rows to render — with 77 coins × 4
 // timeframes, even a tight watch band can turn up more than anyone would
 // actually scan through; the closest ones (already sorted first) are what
 // matters.
@@ -184,7 +184,7 @@ export default function OpportunitiesView() {
       <div className="relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <p className="text-sm leading-relaxed text-muted">
-          مسح تلقائي حي لـ 48 عملة على الأطر الزمنية الأربعة كلها — يعرض أي عملة وصل سعرها الآن لمنطقة طلب
+          مسح تلقائي حي لـ 77 عملة على الأطر الزمنية الأربعة كلها — يعرض أي عملة وصل سعرها الآن لمنطقة طلب
           صالحة للدخول، وأي عملة تقترب منها. يتجدد تلقائيًا كل دقيقة طالما هذه الصفحة مفتوحة. تنبيهات المتصفح
           (لو فعّلتها) تعمل فقط أثناء بقاء هذه الصفحة مفتوحة في متصفحك — وليست تنبيهات push تصلك والتطبيق مغلق.
         </p>

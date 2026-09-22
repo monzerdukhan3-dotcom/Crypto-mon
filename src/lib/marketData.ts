@@ -1,8 +1,14 @@
-import type { Timeframe } from "./constants";
+import { SUPPORTED_SYMBOLS, type Timeframe } from "./constants";
 import type { Candle } from "./types";
 
 const CRYPTO_COM_CANDLESTICK_URL =
   "https://api.crypto.com/exchange/v1/public/get-candlestick";
+
+// Crypto.com Exchange doesn't quote every coin in USDT — a good number of
+// SUPPORTED_SYMBOLS only trade against USD there (see each entry's `pair`
+// in constants.ts), so the instrument name has to come from that lookup
+// rather than always assuming `${symbol}_USDT`.
+const PAIR_BY_SYMBOL = new Map(SUPPORTED_SYMBOLS.map((s) => [s.symbol, s.pair]));
 
 // Crypto.com's public candlestick endpoint uses its own timeframe codes.
 // Day candles are capitalized ("1D"); everything else matches our UI values.
@@ -48,7 +54,7 @@ export async function getCandles(
   timeframe: Timeframe,
   limit: number = DEFAULT_CANDLE_COUNT
 ): Promise<Candle[]> {
-  const pair = `${symbol.toUpperCase()}_USDT`;
+  const pair = PAIR_BY_SYMBOL.get(symbol.toUpperCase()) ?? `${symbol.toUpperCase()}_USDT`;
 
   const url = new URL(CRYPTO_COM_CANDLESTICK_URL);
   url.searchParams.set("instrument_name", pair);
