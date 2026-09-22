@@ -1,6 +1,6 @@
 "use client";
 
-import { Eraser, Minus, Ruler, Slash, Timer } from "lucide-react";
+import { Eraser, Maximize2, Minimize2, Minus, Ruler, Slash, Timer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
@@ -66,8 +66,12 @@ export default function CandlestickChart({
   timeframe,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenSupported, setFullscreenSupported] = useState(false);
 
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("none");
@@ -81,6 +85,28 @@ export default function CandlestickChart({
   // countdown badge can sit right under the price scale's last-price tag —
   // TradingView's convention — instead of floating in a corner.
   const [priceY, setPriceY] = useState<number | null>(null);
+
+  useEffect(() => {
+    // Deferred so this synchronous browser-capability read doesn't run
+    // directly inside the effect body itself.
+    queueMicrotask(() => {
+      setFullscreenSupported(typeof document !== "undefined" && document.fullscreenEnabled);
+    });
+
+    function handleFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === panelRef.current);
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      panelRef.current?.requestFullscreen();
+    }
+  }
 
   // Countdown to the current (last) candle's close, ticking every second.
   // Also re-reads the current price's on-screen position each tick — cheap,
@@ -419,7 +445,7 @@ export default function CandlestickChart({
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={panelRef} className={`relative h-full w-full ${isFullscreen ? "bg-background p-2" : ""}`}>
       <div ref={containerRef} className={`h-full w-full ${drawingTool !== "none" ? "cursor-crosshair" : ""}`} />
 
       {/* Sits right under the price scale's current-price tag, TradingView-
@@ -472,6 +498,23 @@ export default function CandlestickChart({
           </button>
         )}
       </div>
+
+      {fullscreenSupported && (
+        <div className="absolute left-3 top-3 z-10 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "الخروج من ملء الشاشة" : "ملء الشاشة"}
+            className="rounded p-1.5 text-muted hover:bg-background"
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
