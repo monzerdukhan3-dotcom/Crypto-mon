@@ -3,7 +3,7 @@
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { DEFAULT_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
+import { SUPPORTED_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
@@ -42,7 +42,7 @@ export default function AnalysisDashboard() {
     () => (TIMEFRAMES.some((t) => t.value === searchParams.get("timeframe")) ? searchParams.get("timeframe") : "1h") as Timeframe
   );
   const [result, setResult] = useState<FetchResult | null>(null);
-  const [availableSymbols, setAvailableSymbols] = useState<SymbolInfo[]>(DEFAULT_SYMBOLS);
+  const [availableSymbols, setAvailableSymbols] = useState<SymbolInfo[]>(SUPPORTED_SYMBOLS);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,8 +168,8 @@ export default function AnalysisDashboard() {
         className="animate-fade-in-up rounded-lg border border-surface-border bg-surface/60 px-4 py-2.5 text-xs leading-relaxed text-muted"
         style={{ animationDelay: "120ms" }}
       >
-        القائمة تضم أعلى 60 عملة سيولة وحجم تداول على المنصة، مع استبعاد اجتهادي لعملات القمار والميمز الصرفة —
-        هذا اجتهاد تقني وليس فتوى شرعية معتمدة؛ راجع مصدرًا موثوقًا قبل الاعتماد عليه في قرار الاستثمار.
+        القائمة تضم 48 عملة مختارة يغطيها الموقع. هذا تحليل فني آلي وليس نصيحة استثمارية أو فتوى شرعية معتمدة؛
+        راجع مصدرًا موثوقًا قبل الاعتماد عليه في قرار الاستثمار.
       </p>
 
       <div className="flex flex-col gap-5 lg:flex-row">

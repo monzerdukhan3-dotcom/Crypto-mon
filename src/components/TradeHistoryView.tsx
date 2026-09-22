@@ -12,7 +12,7 @@ import type { SymbolInfo } from "@/lib/constants";
 import CandlestickChart from "./CandlestickChart";
 import type { TradePlanBox } from "./TradePlanBoxPrimitive";
 
-// Fetched in small batches rather than all 240 (60 coins × 4 timeframes) at
+// Fetched in small batches rather than all 192 (48 coins × 4 timeframes) at
 // once, so the browser isn't holding that many concurrent requests open —
 // each request is still independently cached server-side, so a second
 // visitor (or this same page, refreshed) gets most of them instantly.
@@ -322,7 +322,7 @@ export default function TradeHistoryView() {
       <div className="relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <p className="text-sm leading-relaxed text-muted">
-          بيانات حقيقية 100% من نفس السوق الحي — ليست تجربة أو محاكاة. يُحتسب تلقائيًا لأعلى 60 عملة على الأطر
+          بيانات حقيقية 100% من نفس السوق الحي — ليست تجربة أو محاكاة. يُحتسب تلقائيًا لـ 48 عملة على الأطر
           الزمنية الأربعة كلها بمجرد أن يعود السعر فعليًا لمنطقة طلب، ويُقيَّم مقابل آخر 250 شمعة حقيقية لكل عملة
           وفريم زمني. السجل يبدأ من الآن فصاعدًا فقط — لا صفقات قديمة قبل تفعيل هذا السجل — وليس محفوظًا في
           متصفحك، فهو مطابق لكل الزوار على أي جهاز، ويتجدد تلقائيًا كل بضع دقائق. اضغط على أي صفقة لرؤيتها مرسومة

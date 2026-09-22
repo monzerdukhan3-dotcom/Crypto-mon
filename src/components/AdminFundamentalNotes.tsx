@@ -2,7 +2,7 @@
 
 import { Save, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { DEFAULT_SYMBOLS, type SymbolInfo } from "@/lib/constants";
+import { SUPPORTED_SYMBOLS, type SymbolInfo } from "@/lib/constants";
 import {
   deleteFundamentalNote,
   getFundamentalNote,
@@ -16,7 +16,7 @@ function formatDate(unixSeconds: number): string {
 }
 
 export default function AdminFundamentalNotes() {
-  const [availableSymbols, setAvailableSymbols] = useState<SymbolInfo[]>(DEFAULT_SYMBOLS);
+  const [availableSymbols, setAvailableSymbols] = useState<SymbolInfo[]>(SUPPORTED_SYMBOLS);
   const [symbol, setSymbol] = useState<string>("BTC");
   const [text, setText] = useState("");
   const [savedNote, setSavedNote] = useState<FundamentalNote | null>(null);
