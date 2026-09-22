@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
     const freshTradePlan = tradePlan && getTradePlanProgress(tradePlan, candles).highestTargetHit === 0 ? tradePlan : null;
     // Tighter than the single-coin dashboard's own 6x-ATR watch band — that
     // one only ever shows a single coin's single nearest zone, but scanning
-    // all 77 coins at once with the same generous band buries the handful
+    // all 76 coins at once with the same generous band buries the handful
     // of setups that are genuinely close under everything that's merely
     // somewhere in the neighborhood.
     const approachingZone = !freshTradePlan

@@ -71,7 +71,6 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   { symbol: "ANKR", label: "Ankr (ANKR)", pair: "ANKR_USD" },
   { symbol: "BAT", label: "Basic Attention Token (BAT)", pair: "BAT_USDT" },
   { symbol: "ZRX", label: "0x Protocol (ZRX)", pair: "ZRX_USD" },
-  { symbol: "STORJ", label: "Storj (STORJ)", pair: "STORJ_USD" },
   { symbol: "CTSI", label: "Cartesi (CTSI)", pair: "CTSI_USDT" },
   { symbol: "API3", label: "API3 (API3)", pair: "API3_USD" },
   { symbol: "BAND", label: "Band Protocol (BAND)", pair: "BAND_USD" },

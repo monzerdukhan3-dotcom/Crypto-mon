@@ -168,7 +168,7 @@ export default function AnalysisDashboard() {
         className="animate-fade-in-up rounded-lg border border-surface-border bg-surface/60 px-4 py-2.5 text-xs leading-relaxed text-muted"
         style={{ animationDelay: "120ms" }}
       >
-        القائمة تضم 77 عملة مختارة يغطيها الموقع. هذا تحليل فني آلي وليس نصيحة استثمارية أو فتوى شرعية معتمدة؛
+        القائمة تضم 76 عملة مختارة يغطيها الموقع. هذا تحليل فني آلي وليس نصيحة استثمارية أو فتوى شرعية معتمدة؛
         راجع مصدرًا موثوقًا قبل الاعتماد عليه في قرار الاستثمار.
       </p>
 
