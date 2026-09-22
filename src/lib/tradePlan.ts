@@ -7,6 +7,44 @@ function latestAtr(candles: Candle[], period = 14): number | null {
   return [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
 }
 
+/**
+ * Index of the first candle from `fromTime` onward whose close reached (or
+ * went below) `zoneTop`, or -1 if price never came back. `fromTime` must be
+ * the zone's own `endTime` (just past its base), not `startTime` — the base
+ * candles themselves are what defined the zone's price range in the first
+ * place, so starting from `startTime` would trivially "match" on the zone's
+ * own formation instead of a genuine later pullback.
+ */
+function findEntryIndex(candles: Candle[], fromTime: number, zoneTop: number): number {
+  const startIndex = candles.findIndex((c) => c.time >= fromTime);
+  if (startIndex === -1) return -1;
+  for (let i = startIndex; i < candles.length; i++) {
+    if (candles[i].close <= zoneTop) return i;
+  }
+  return -1;
+}
+
+/**
+ * False once price has, at any candle after `entryTime`, closed the trade
+ * out — a low reaching the stop loss (checked first, same "worst case
+ * first" convention tradeHistory.ts uses) or a high reaching every target
+ * in turn. Mirrors evaluateTradeOutcome's own resolution loop, just
+ * collapsed to the yes/no "is this still an open position" buildTradePlan
+ * needs instead of a full resolved/stoppedOut/highestTargetHit record.
+ */
+function isEntryStillOpen(stopLoss: number, targets: number[], entryTime: number, candles: Candle[]): boolean {
+  let highestTargetHit = 0;
+  for (const c of candles) {
+    if (c.time <= entryTime) continue;
+    if (c.low <= stopLoss) return false;
+    while (highestTargetHit < targets.length && c.high >= targets[highestTargetHit]) {
+      highestTargetHit++;
+    }
+    if (highestTargetHit === targets.length) return false;
+  }
+  return true;
+}
+
 export interface BuildTradePlanOptions {
   /** Extra room below the zone for the stop loss, as a fraction of zone height. */
   stopBufferRatio?: number;
@@ -59,20 +97,26 @@ export function planFromZone(
 }
 
 /**
- * Builds an automatic trade plan off the nearest active demand zone price
- * has actually returned to — not merely come close to. A zone only forms
- * after its impulse leaves it, so it still has to be waited on: there's no
- * "entry" the moment it forms (or while price is still off making that
- * impulse move elsewhere), only once price is back at or inside the zone
- * itself. A zone price hasn't returned to yet is a level to watch (see
+ * Builds an automatic trade plan off an active demand zone with a currently
+ * open position on it — price has, at some point since the zone formed,
+ * closed at or inside it (a real return, not merely a wick through), and
+ * that resulting trade hasn't since hit its stop loss or all of its
+ * targets. This is deliberately NOT "is currentPrice inside the zone right
+ * now": a live snapshot like that would lose the plan the moment price
+ * ticks back away from a zone it only just tagged, even though the trade it
+ * triggered is still open — exactly the same entry+resolution logic the
+ * trade-history backtest uses, so a zone showing an open position here is
+ * the same zone that shows a "قيد الانتظار" record in /history. A zone
+ * price hasn't returned to at all yet is a level to watch (see
  * findApproachingDemandZone), not a live setup, so it's excluded here even
  * though it's still a perfectly valid zone for the sidebar's zone list.
  *
- * "تداخل المناطق": when this timeframe's own trend isn't clearly up, a
- * demand zone here is only safe to buy if it overlaps a same-type zone on
- * the higher timeframe (zone.htfOverlap) — real support from above, not
- * just this timeframe's own read. With a healthy uptrend that confirmation
- * isn't required.
+ * "تداخل المناطق": when this timeframe's own trend wasn't clearly up as of
+ * the entry candle, a demand zone here was only safe to buy if it overlaps
+ * a same-type zone on the higher timeframe (zone.htfOverlap) — real support
+ * from above, not just this timeframe's own read at the time. Judged from
+ * what was known then, not from today's trend, which can have changed
+ * since.
  */
 export function buildTradePlan(
   zones: Zone[],
@@ -80,16 +124,28 @@ export function buildTradePlan(
   candles: Candle[],
   options: BuildTradePlanOptions = {}
 ): TradePlan | null {
-  const reachedDemandZones = zones.filter((z) => z.type === "demand" && z.active && currentPrice <= z.top);
-  if (reachedDemandZones.length === 0) return null;
+  const openZones = zones.filter((zone) => {
+    if (zone.type !== "demand" || !zone.active) return false;
 
-  const eligible =
-    detectTrend(candles) === "up" ? reachedDemandZones : reachedDemandZones.filter((z) => z.htfOverlap);
-  if (eligible.length === 0) return null;
+    const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
+    if (entryIndex === -1) return false;
 
-  // The shallowest zone price has reached — the one whose top is closest
-  // to (just above, or at) the current price.
-  const nearest = eligible.reduce((closest, zone) => (zone.top < closest.top ? zone : closest));
+    const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
+    if (trendAtEntry !== "up" && !zone.htfOverlap) return false;
+
+    const plan = planFromZone(zone, zones, options);
+    if (!plan) return false;
+
+    return isEntryStillOpen(plan.stopLoss, plan.targets, candles[entryIndex].time, candles);
+  });
+
+  if (openZones.length === 0) return null;
+
+  // Among every zone with a still-open position, the one whose top sits
+  // closest to the current price — the most immediately relevant to show.
+  const nearest = openZones.reduce((closest, zone) =>
+    Math.abs(zone.top - currentPrice) < Math.abs(closest.top - currentPrice) ? zone : closest
+  );
 
   return planFromZone(nearest, zones, options);
 }
@@ -97,12 +153,12 @@ export function buildTradePlan(
 /**
  * The nearest active demand zone price is heading toward but hasn't
  * actually reached yet — anything price is still above counts, right up to
- * (but not including) the zone itself, since buildTradePlan takes over the
- * instant price reaches it. Close enough to be worth flagging so a limit
- * buy order can be queued at the zone's top ahead of the return, instead of
- * only finding out once price is already there. Returns null once a real
- * trade plan exists (that already covers it) or once nothing sits within
- * the watch range.
+ * (but not including) the zone itself, since buildTradePlan takes over once
+ * price closes at or inside it. Close enough to be worth flagging so a
+ * limit buy order can be queued at the zone's top ahead of the return,
+ * instead of only finding out once price is already there. Returns null
+ * once a real trade plan exists (that already covers it) or once nothing
+ * sits within the watch range.
  */
 export function findApproachingDemandZone(
   zones: Zone[],
@@ -127,15 +183,16 @@ export function findApproachingDemandZone(
 
 /**
  * The time span a live trade plan's risk/reward box should be drawn over:
- * starting at the zone's own origin (its narrow box's end — where the entry
- * level was actually established) and ending the moment price first reaches
- * the stop loss or any target, whichever comes first — the same "worst case
- * first" convention tradeHistory.ts uses to resolve a trade. Runs to the
- * last available candle if nothing has been hit yet.
+ * starting at the actual entry candle (the first return to the zone, which
+ * can be well after the zone's own narrow formation box if the position has
+ * been open a while) and ending the moment price first reaches the stop
+ * loss or any target, whichever comes first — the same "worst case first"
+ * convention tradeHistory.ts uses to resolve a trade. Runs to the last
+ * available candle if nothing has been hit yet.
  */
 export function computeTradePlanSpan(tradePlan: TradePlan, candles: Candle[]): { startTime: number; endTime: number } {
-  const startIndex = candles.findIndex((c) => c.time >= tradePlan.zone.endTime);
-  const fromIndex = startIndex === -1 ? 0 : startIndex;
+  const entryIndex = findEntryIndex(candles, tradePlan.zone.endTime, tradePlan.entry);
+  const fromIndex = entryIndex === -1 ? 0 : entryIndex;
   const startTime = candles[fromIndex]?.time ?? tradePlan.zone.endTime;
 
   let endTime = candles[candles.length - 1]?.time ?? startTime;
