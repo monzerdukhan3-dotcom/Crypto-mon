@@ -122,7 +122,16 @@ body {
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* `backwards` only (not `both`) — the delayed entries here (animationDelay
+     inline styles) still need the pre-start "from" state held so they don't
+     flash at full opacity before their turn, but holding the "to" state's
+     transform forever after the animation ends (`forwards`) makes this
+     element a CSS containing block for any `position: fixed` descendant —
+     e.g. the chart's fullscreen panel — trapping it inside this box instead
+     of the real viewport. Letting the animation's transform actually clear
+     to `none` once it finishes avoids that trap, with no visual difference
+     since the end state already matches each element's un-animated look. */
+  animation: fade-in-up 500ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes live-pulse {

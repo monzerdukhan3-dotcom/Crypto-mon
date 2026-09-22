@@ -66,12 +66,37 @@ export default function CandlestickChart({
   timeframe,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
 
+  // A CSS-only "fullscreen" (fixed, covers the viewport) rather than the
+  // browser's native Fullscreen API — iOS Safari doesn't support that API
+  // on arbitrary elements at all (only <video>), so a real requestFullscreen
+  // call would leave the button doing nothing there. This works identically
+  // on every device.
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [fullscreenSupported, setFullscreenSupported] = useState(false);
+
+  // Locks background scroll while the chart covers the viewport — without
+  // this, a touch-scroll on mobile would scroll the page behind the chart.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFullscreen]);
+
+  // Escape exits fullscreen — independent of the drawing-tool Escape
+  // handler further down, which only attaches while a tool is active.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsFullscreen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("none");
@@ -86,26 +111,8 @@ export default function CandlestickChart({
   // TradingView's convention — instead of floating in a corner.
   const [priceY, setPriceY] = useState<number | null>(null);
 
-  useEffect(() => {
-    // Deferred so this synchronous browser-capability read doesn't run
-    // directly inside the effect body itself.
-    queueMicrotask(() => {
-      setFullscreenSupported(typeof document !== "undefined" && document.fullscreenEnabled);
-    });
-
-    function handleFullscreenChange() {
-      setIsFullscreen(document.fullscreenElement === panelRef.current);
-    }
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
   function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      panelRef.current?.requestFullscreen();
-    }
+    setIsFullscreen((current) => !current);
   }
 
   // Countdown to the current (last) candle's close, ticking every second.
@@ -445,7 +452,11 @@ export default function CandlestickChart({
   }
 
   return (
-    <div ref={panelRef} className={`relative h-full w-full ${isFullscreen ? "bg-background p-2" : ""}`}>
+    <div
+      className={
+        isFullscreen ? "fixed inset-0 z-50 bg-background p-2" : "relative h-full w-full"
+      }
+    >
       <div ref={containerRef} className={`h-full w-full ${drawingTool !== "none" ? "cursor-crosshair" : ""}`} />
 
       {/* Sits right under the price scale's current-price tag, TradingView-
@@ -499,22 +510,20 @@ export default function CandlestickChart({
         )}
       </div>
 
-      {fullscreenSupported && (
-        <div className="absolute left-3 top-3 z-10 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "الخروج من ملء الشاشة" : "ملء الشاشة"}
-            className="rounded p-1.5 text-muted hover:bg-background"
-          >
-            {isFullscreen ? (
-              <Minimize2 className="h-3.5 w-3.5" strokeWidth={2.25} />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" strokeWidth={2.25} />
-            )}
-          </button>
-        </div>
-      )}
+      <div className="absolute left-3 top-3 z-10 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "الخروج من ملء الشاشة" : "ملء الشاشة"}
+          className="rounded p-1.5 text-muted hover:bg-background"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+          ) : (
+            <Maximize2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+          )}
+        </button>
+      </div>
     </div>
   );
 }
