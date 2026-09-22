@@ -34,6 +34,7 @@ const RISK_FILL = "rgba(240, 68, 68, 0.20)";
 const RISK_FILL_HIT = "rgba(240, 68, 68, 0.34)";
 const RISK_BORDER = "rgba(240, 68, 68, 0.7)";
 const ENTRY_LINE_COLOR = "#a1a1aa";
+const ENTRY_PILL_COLOR = "rgba(63, 63, 70, 0.92)";
 const TP_PILL_HIT = "rgba(22, 101, 52, 0.92)";
 const TP_PILL_PENDING = "rgba(63, 63, 70, 0.88)";
 
@@ -82,13 +83,16 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
       ctx.strokeStyle = RISK_BORDER;
       ctx.strokeRect(left, entry, right - left, stop - entry);
 
-      // Entry boundary, solid, where the two sides meet.
+      // Entry boundary, solid, where the two sides meet — labeled, same as
+      // the targets below, so the entry price itself is actually readable
+      // on the chart instead of only in the sidebar.
       ctx.strokeStyle = ENTRY_LINE_COLOR;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(left, entry);
       ctx.lineTo(right, entry);
       ctx.stroke();
+      this.drawLevelLabel(ctx, scope, left, right, entry, "Entry", ENTRY_PILL_COLOR);
 
       // Take-profit dividers inside the profit side, each labeled — a
       // target already reached is drawn solid, one still pending stays
@@ -107,21 +111,21 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        this.drawTargetLabel(ctx, scope, left, right, yPx, i + 1, hit);
+        this.drawLevelLabel(ctx, scope, left, right, yPx, `Tp${i + 1}`, hit ? TP_PILL_HIT : TP_PILL_PENDING);
       });
 
       ctx.restore();
     });
   }
 
-  private drawTargetLabel(
+  private drawLevelLabel(
     ctx: CanvasRenderingContext2D,
     scope: { horizontalPixelRatio: number; verticalPixelRatio: number; bitmapSize: { width: number; height: number } },
     left: number,
     right: number,
     y: number,
-    index: number,
-    hit: boolean
+    text: string,
+    pillColor: string
   ) {
     // Centered on whatever's actually visible of the box, not its full
     // (possibly off-screen) span — the same reasoning as clamping other
@@ -130,7 +134,6 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
     const visibleRight = Math.min(right, scope.bitmapSize.width);
     if (visibleRight - visibleLeft < 24 * scope.horizontalPixelRatio) return;
 
-    const text = `Tp${index}`;
     const fontSize = 10.5 * scope.verticalPixelRatio;
     ctx.font = `700 ${fontSize}px sans-serif`;
     const textWidth = ctx.measureText(text).width;
@@ -144,7 +147,7 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
     const pillY = y - pillHeight / 2;
     const radius = Math.min(4 * scope.horizontalPixelRatio, pillHeight / 2, pillWidth / 2);
 
-    ctx.fillStyle = hit ? TP_PILL_HIT : TP_PILL_PENDING;
+    ctx.fillStyle = pillColor;
     ctx.beginPath();
     ctx.moveTo(pillX + radius, pillY);
     ctx.lineTo(pillX + pillWidth - radius, pillY);

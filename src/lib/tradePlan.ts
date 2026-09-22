@@ -8,17 +8,34 @@ function latestAtr(candles: Candle[], period = 14): number | null {
 }
 
 /**
- * Index of the first candle from `fromTime` onward whose close reached (or
- * went below) `zoneTop`, or -1 if price never came back. `fromTime` must be
- * the zone's own `endTime` (just past its base), not `startTime` — the base
- * candles themselves are what defined the zone's price range in the first
- * place, so starting from `startTime` would trivially "match" on the zone's
- * own formation instead of a genuine later pullback.
+ * Index of the first candle, after `fromTime`, whose close genuinely
+ * *returns* to (or inside) `zoneTop` — a real pullback, not a fresh zone
+ * that hasn't actually left yet. `fromTime` must be the zone's own
+ * `endTime` (just past its base): the base candles themselves are what
+ * defined the zone's price range, and the impulse that follows doesn't
+ * always clear the zone on its very first candle — some breakouts take 2-3
+ * candles to actually close above `zoneTop`. Scanning for "close <= top"
+ * starting right at the base's end would trivially match one of those
+ * still-inside-the-zone candles before the impulse even confirms, which
+ * isn't a return at all. So this first requires a confirmed break (some
+ * candle actually closing beyond `zoneTop`), then looks for the first
+ * later close back at or inside it — the only thing "price came back"
+ * should mean.
  */
-function findEntryIndex(candles: Candle[], fromTime: number, zoneTop: number): number {
+export function findEntryIndex(candles: Candle[], fromTime: number, zoneTop: number): number {
   const startIndex = candles.findIndex((c) => c.time >= fromTime);
   if (startIndex === -1) return -1;
+
+  let breakoutIndex = -1;
   for (let i = startIndex; i < candles.length; i++) {
+    if (candles[i].close > zoneTop) {
+      breakoutIndex = i;
+      break;
+    }
+  }
+  if (breakoutIndex === -1) return -1;
+
+  for (let i = breakoutIndex + 1; i < candles.length; i++) {
     if (candles[i].close <= zoneTop) return i;
   }
   return -1;
