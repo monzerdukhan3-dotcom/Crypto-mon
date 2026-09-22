@@ -270,6 +270,23 @@ function scoreZone(
   return { score, strength };
 }
 
+// The full range scoreZone() can actually produce: every point source
+// missed (worst case, htf opposing) down to -1, up to every source maxed
+// out (best case, a fresh untested zone) at 10 — see scoreZone above.
+const MIN_STRENGTH_SCORE = -1;
+const MAX_STRENGTH_SCORE = 10;
+
+/**
+ * A zone's raw scoreZone() point total, rescaled to an intuitive 0-100 "out
+ * of 100" figure — the same scale the sidebar already uses for trade
+ * confidence, so a zone's strength reads the same way instead of only ever
+ * being "قوية/متوسطة/ضعيفة" with no sense of how strong within that tier.
+ */
+export function zoneStrengthPercent(strengthScore: number): number {
+  const clamped = Math.max(MIN_STRENGTH_SCORE, Math.min(MAX_STRENGTH_SCORE, strengthScore));
+  return Math.round(((clamped - MIN_STRENGTH_SCORE) / (MAX_STRENGTH_SCORE - MIN_STRENGTH_SCORE)) * 100);
+}
+
 interface RawCandidate extends ZoneCandidate {
   /** Absolute end of the impulse-lookahead window, for recomputing it later without re-scanning swings. */
   impulseWindowEnd: number;

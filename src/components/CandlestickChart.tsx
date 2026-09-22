@@ -1,11 +1,14 @@
 "use client";
 
-import { Eraser, Maximize2, Minimize2, Minus, Ruler, Slash, Timer } from "lucide-react";
+import { BarChart2, Eraser, Maximize2, Minimize2, Minus, Ruler, Slash, TrendingUp, Timer, Waves } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
   createChart,
+  HistogramSeries,
+  LineSeries,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
   type SeriesType,
@@ -13,12 +16,22 @@ import {
 } from "lightweight-charts";
 import { TIMEFRAME_SECONDS, type Timeframe } from "@/lib/constants";
 import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
+import { calculateEMA, calculateMACD, calculateRSI } from "@/lib/indicators";
 import { computeTradePlanSpan } from "@/lib/tradePlan";
 import type { Candle, TradePlan, Zone } from "@/lib/types";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
 import { MeasurePrimitive, type MeasurePoint } from "./MeasurePrimitive";
 import { TradePlanBoxPrimitive, type TradePlanBox } from "./TradePlanBoxPrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
+
+export interface IndicatorToggles {
+  volume: boolean;
+  ma: boolean;
+  rsi: boolean;
+  macd: boolean;
+}
+
+export const DEFAULT_INDICATORS: IndicatorToggles = { volume: true, ma: false, rsi: false, macd: false };
 
 interface CandlestickChartProps {
   data: Candle[];
@@ -42,6 +55,24 @@ interface CandlestickChartProps {
 const SUCCESS_COLOR = "#22c55e";
 const DANGER_COLOR = "#f04444";
 const HIT_TEST_TOLERANCE_PX = 6;
+
+const VOLUME_UP_COLOR = "rgba(34, 197, 94, 0.5)";
+const VOLUME_DOWN_COLOR = "rgba(240, 68, 68, 0.5)";
+const EMA20_COLOR = "#f59e0b";
+const EMA50_COLOR = "#8b5cf6";
+const RSI_COLOR = "#3b82f6";
+const RSI_BAND_COLOR = "rgba(113, 113, 122, 0.5)";
+const MACD_LINE_COLOR = "#3b82f6";
+const MACD_SIGNAL_COLOR = "#f59e0b";
+// Leaves room at the bottom of the main pane for the volume histogram to sit
+// under the candles without the two overlapping — restored to the plain
+// default once volume is toggled off.
+const MAIN_SCALE_MARGINS_DEFAULT = { top: 0.1, bottom: 0.1 };
+const MAIN_SCALE_MARGINS_WITH_VOLUME = { top: 0.1, bottom: 0.28 };
+// A secondary indicator pane (RSI/MACD) gets a modest share of the chart's
+// total height — big enough to actually read, small enough that the price
+// pane above it stays the main focus.
+const INDICATOR_PANE_STRETCH_FACTOR = 0.28;
 
 function makeDrawingId(): string {
   return `drawing-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -97,6 +128,12 @@ export default function CandlestickChart({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isFullscreen]);
+
+  const [indicators, setIndicators] = useState<IndicatorToggles>(DEFAULT_INDICATORS);
+
+  function toggleIndicator(key: keyof IndicatorToggles) {
+    setIndicators((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>("none");
@@ -253,6 +290,158 @@ export default function CandlestickChart({
       seriesRef.current = null;
     };
   }, [data, zones, highlightZoneId, resolvedBox]);
+
+  // Volume + MA/RSI/MACD, added onto the chart the main effect above
+  // already built. Kept in its own effect (keyed only on the indicator
+  // toggles + data, not zones/highlightZoneId/resolvedBox) so flipping an
+  // indicator on or off never tears down and rebuilds the whole chart —
+  // that would reset the user's zoom/pan for no reason. RSI and MACD each
+  // get their own secondary pane (lightweight-charts v5's multi-pane
+  // support); volume and the moving averages overlay directly on the main
+  // candlestick pane instead, the same way TradingView's own defaults work.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const mainSeries = seriesRef.current;
+    if (!chart || !mainSeries || data.length === 0) return;
+
+    const cleanupFns: (() => void)[] = [];
+
+    if (indicators.volume) {
+      mainSeries.priceScale().applyOptions({ scaleMargins: MAIN_SCALE_MARGINS_WITH_VOLUME });
+      const volumeSeries = chart.addSeries(
+        HistogramSeries,
+        { priceScaleId: "volume", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false },
+        0
+      );
+      volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      volumeSeries.setData(
+        data.map((c) => ({
+          time: c.time as UTCTimestamp,
+          value: c.volume ?? 0,
+          color: c.close >= c.open ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR,
+        }))
+      );
+      cleanupFns.push(() => {
+        chart.removeSeries(volumeSeries);
+        mainSeries.priceScale().applyOptions({ scaleMargins: MAIN_SCALE_MARGINS_DEFAULT });
+      });
+    }
+
+    if (indicators.ma) {
+      const closes = data.map((c) => c.close);
+      const ema20 = calculateEMA(closes, 20);
+      const ema50 = calculateEMA(closes, 50);
+      const ema20Series = chart.addSeries(
+        LineSeries,
+        { color: EMA20_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "EMA 20" },
+        0
+      );
+      const ema50Series = chart.addSeries(
+        LineSeries,
+        { color: EMA50_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "EMA 50" },
+        0
+      );
+      ema20Series.setData(
+        data.flatMap((c, i) => (Number.isFinite(ema20[i]) ? [{ time: c.time as UTCTimestamp, value: ema20[i] }] : []))
+      );
+      ema50Series.setData(
+        data.flatMap((c, i) => (Number.isFinite(ema50[i]) ? [{ time: c.time as UTCTimestamp, value: ema50[i] }] : []))
+      );
+      cleanupFns.push(() => {
+        chart.removeSeries(ema20Series);
+        chart.removeSeries(ema50Series);
+      });
+    }
+
+    if (indicators.rsi) {
+      const pane = chart.addPane();
+      pane.setStretchFactor(INDICATOR_PANE_STRETCH_FACTOR);
+      const rsiSeries = chart.addSeries(
+        LineSeries,
+        { color: RSI_COLOR, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: "RSI 14" },
+        pane.paneIndex()
+      );
+      const rsiValues = calculateRSI(
+        data.map((c) => c.close),
+        14
+      );
+      rsiSeries.setData(
+        data.flatMap((c, i) => (Number.isFinite(rsiValues[i]) ? [{ time: c.time as UTCTimestamp, value: rsiValues[i] }] : []))
+      );
+      const overbought = rsiSeries.createPriceLine({
+        price: 70,
+        color: RSI_BAND_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "70",
+      });
+      const oversold = rsiSeries.createPriceLine({
+        price: 30,
+        color: RSI_BAND_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "30",
+      });
+      cleanupFns.push(() => {
+        rsiSeries.removePriceLine(overbought);
+        rsiSeries.removePriceLine(oversold);
+        // Removing a pane's last series auto-collapses the (now-empty) pane
+        // itself — an explicit chart.removePane() afterward throws
+        // ("Invalid pane index"), since there's nothing left to remove.
+        chart.removeSeries(rsiSeries);
+      });
+    }
+
+    if (indicators.macd) {
+      const pane = chart.addPane();
+      pane.setStretchFactor(INDICATOR_PANE_STRETCH_FACTOR);
+      const paneIndex = pane.paneIndex();
+      const { macd, signal, histogram } = calculateMACD(data.map((c) => c.close));
+      const histogramSeries = chart.addSeries(
+        HistogramSeries,
+        { priceLineVisible: false, lastValueVisible: false },
+        paneIndex
+      );
+      const macdSeries = chart.addSeries(
+        LineSeries,
+        { color: MACD_LINE_COLOR, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: "MACD" },
+        paneIndex
+      );
+      const signalSeries = chart.addSeries(
+        LineSeries,
+        { color: MACD_SIGNAL_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "Signal" },
+        paneIndex
+      );
+      histogramSeries.setData(
+        data.flatMap((c, i) =>
+          Number.isFinite(histogram[i])
+            ? [{ time: c.time as UTCTimestamp, value: histogram[i], color: histogram[i] >= 0 ? VOLUME_UP_COLOR : VOLUME_DOWN_COLOR }]
+            : []
+        )
+      );
+      macdSeries.setData(
+        data.flatMap((c, i) => (Number.isFinite(macd[i]) ? [{ time: c.time as UTCTimestamp, value: macd[i] }] : []))
+      );
+      signalSeries.setData(
+        data.flatMap((c, i) => (Number.isFinite(signal[i]) ? [{ time: c.time as UTCTimestamp, value: signal[i] }] : []))
+      );
+      cleanupFns.push(() => {
+        // Same auto-collapse as the RSI pane above — no explicit
+        // removePane() once every series in it is gone.
+        chart.removeSeries(histogramSeries);
+        chart.removeSeries(macdSeries);
+        chart.removeSeries(signalSeries);
+      });
+    }
+
+    chart.applyOptions({});
+
+    return () => {
+      for (const cleanup of cleanupFns) cleanup();
+    };
+  }, [data, indicators.volume, indicators.ma, indicators.rsi, indicators.macd]);
 
   // Risk/reward box for the active trade plan (or an explicitly passed
   // history record's box) — a bounded shape (not lightweight-charts' full-
@@ -510,7 +699,42 @@ export default function CandlestickChart({
         )}
       </div>
 
-      <div className="absolute left-3 top-3 z-10 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
+        <button
+          type="button"
+          onClick={() => toggleIndicator("volume")}
+          title="الفوليوم"
+          className={`rounded p-1.5 ${indicators.volume ? "bg-success-soft text-success" : "text-muted hover:bg-background"}`}
+        >
+          <BarChart2 className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleIndicator("ma")}
+          title="متوسطات متحركة (EMA 20/50)"
+          className={`rounded p-1.5 ${indicators.ma ? "bg-success-soft text-success" : "text-muted hover:bg-background"}`}
+        >
+          <TrendingUp className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleIndicator("rsi")}
+          title="مؤشر القوة النسبية RSI"
+          className={`rounded px-1.5 py-1.5 text-[10px] font-bold ${indicators.rsi ? "bg-success-soft text-success" : "text-muted hover:bg-background"}`}
+        >
+          RSI
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleIndicator("macd")}
+          title="مؤشر MACD"
+          className={`rounded p-1.5 ${indicators.macd ? "bg-success-soft text-success" : "text-muted hover:bg-background"}`}
+        >
+          <Waves className="h-3.5 w-3.5" strokeWidth={2.25} />
+        </button>
+      </div>
+
+      <div className="absolute left-3 top-12 z-10 rounded-md border border-surface-border bg-surface/90 p-1 shadow-sm backdrop-blur">
         <button
           type="button"
           onClick={toggleFullscreen}

@@ -23,6 +23,7 @@ import type { TradeConfidence } from "@/lib/tradeConfidence";
 import type { TradeProgress } from "@/lib/tradeProgress";
 import type { TradePlan, Zone, ZoneStrength } from "@/lib/types";
 import type { VolatilityCheck } from "@/lib/volatility";
+import { zoneStrengthPercent } from "@/lib/zones";
 
 interface ZonesSidebarProps {
   symbol: string;
@@ -35,12 +36,6 @@ interface ZonesSidebarProps {
   currentPrice: number;
   volatility: VolatilityCheck | null;
 }
-
-const STRENGTH_LABEL: Record<ZoneStrength, string> = {
-  strong: "قوية",
-  medium: "متوسطة",
-  weak: "ضعيفة",
-};
 
 const STRENGTH_CLASSES: Record<ZoneStrength, string> = {
   strong: "bg-success-soft text-success",
@@ -307,7 +302,7 @@ export default function ZonesSidebar({
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STRENGTH_CLASSES[zone.strength]}`}
                 >
-                  {STRENGTH_LABEL[zone.strength]}
+                  {zoneStrengthPercent(zone.strengthScore)}/100
                 </span>
               </li>
             ))}
