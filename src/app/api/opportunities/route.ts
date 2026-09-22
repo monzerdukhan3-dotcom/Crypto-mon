@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
-import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
+import { buildTradePlan, findApproachingDemandZone, getTradePlanProgress } from "@/lib/tradePlan";
 import { detectZones } from "@/lib/zones";
 import type { Timeframe } from "@/lib/constants";
 
@@ -53,12 +53,18 @@ export async function GET(request: NextRequest) {
     const currentPrice = candles[candles.length - 1].close;
     const zones = detectZones(candles, { higherTimeframeCandles: dailyCandles });
     const tradePlan = buildTradePlan(zones, currentPrice, candles);
+    // A plan that already reached one of its targets is still a genuinely
+    // open position (see /history and the coin's own chart), but it's no
+    // longer a fresh entry — this page lists setups that are still purely
+    // at risk, not ones already banking a win, so it drops out here once
+    // any target has actually been hit.
+    const freshTradePlan = tradePlan && getTradePlanProgress(tradePlan, candles).highestTargetHit === 0 ? tradePlan : null;
     // Tighter than the single-coin dashboard's own 6x-ATR watch band — that
     // one only ever shows a single coin's single nearest zone, but scanning
     // all 77 coins at once with the same generous band buries the handful
     // of setups that are genuinely close under everything that's merely
     // somewhere in the neighborhood.
-    const approachingZone = !tradePlan
+    const approachingZone = !freshTradePlan
       ? findApproachingDemandZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 })
       : null;
 
@@ -66,11 +72,11 @@ export async function GET(request: NextRequest) {
       symbol,
       timeframe: tf,
       currentPrice,
-      status: tradePlan ? "entry" : approachingZone ? "approaching" : "none",
-      zoneTop: tradePlan?.zone.top ?? approachingZone?.top ?? null,
-      zoneBottom: tradePlan?.zone.bottom ?? approachingZone?.bottom ?? null,
-      entry: tradePlan?.entry ?? approachingZone?.top ?? null,
-      stopLoss: tradePlan?.stopLoss ?? null,
+      status: freshTradePlan ? "entry" : approachingZone ? "approaching" : "none",
+      zoneTop: freshTradePlan?.zone.top ?? approachingZone?.top ?? null,
+      zoneBottom: freshTradePlan?.zone.bottom ?? approachingZone?.bottom ?? null,
+      entry: freshTradePlan?.entry ?? approachingZone?.top ?? null,
+      stopLoss: freshTradePlan?.stopLoss ?? null,
       distancePct: approachingZone ? ((currentPrice - approachingZone.top) / currentPrice) * 100 : null,
     };
 

@@ -2,6 +2,34 @@ import { calculateATR } from "./indicators";
 import { detectTrend } from "./trend";
 import type { Candle, TradePlan, Zone } from "./types";
 
+/**
+ * How many of a plan's targets have actually been reached since entry,
+ * checking every candle's high the same way isEntryStillOpen does — not
+ * just where currentPrice happens to sit right now, which can't tell a
+ * trade that touched (and pulled back from) target 1 apart from one that
+ * never got there at all. Used to tell a genuinely fresh setup (still at
+ * or near entry, nothing hit yet) apart from one that's already
+ * progressed and simply hasn't been stopped out or fully resolved —
+ * still an open position worth showing on its own chart, but no longer a
+ * "new opportunity" to list on the opportunities page.
+ */
+export function getTradePlanProgress(tradePlan: TradePlan, candles: Candle[]): { highestTargetHit: number } {
+  const entryIndex = findEntryIndex(candles, tradePlan.zone.endTime, tradePlan.entry);
+  if (entryIndex === -1) return { highestTargetHit: 0 };
+
+  let highestTargetHit = 0;
+  const entryTime = candles[entryIndex].time;
+  for (const c of candles) {
+    if (c.time <= entryTime) continue;
+    if (c.low <= tradePlan.stopLoss) break;
+    while (highestTargetHit < tradePlan.targets.length && c.high >= tradePlan.targets[highestTargetHit]) {
+      highestTargetHit++;
+    }
+    if (highestTargetHit === tradePlan.targets.length) break;
+  }
+  return { highestTargetHit };
+}
+
 function latestAtr(candles: Candle[], period = 14): number | null {
   const atr = calculateATR(candles, period);
   return [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
