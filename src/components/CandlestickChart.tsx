@@ -439,6 +439,16 @@ export default function CandlestickChart({
     chart.applyOptions({});
 
     return () => {
+      // When `data` itself changes, the main chart-creation effect above
+      // (declared earlier, so its cleanup runs first) already tore down
+      // this exact chart instance via chart.remove() and nulled the refs —
+      // which already disposes every series and pane on it, indicators
+      // included. Calling removeSeries()/priceScale() on that destroyed
+      // instance afterward throws, crashing the whole render on every
+      // single symbol/timeframe switch once any indicator was on. Only run
+      // this effect's own explicit cleanup when the chart is still the
+      // live one (an indicator toggle changed but the chart itself didn't).
+      if (chartRef.current !== chart) return;
       for (const cleanup of cleanupFns) cleanup();
     };
   }, [data, indicators.volume, indicators.ma, indicators.rsi, indicators.macd]);
