@@ -52,10 +52,10 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
             {isEntry ? "عند نقطة الدخول" : `يقترب (${Math.abs(item.distancePct ?? 0).toFixed(1)}%)`}
           </span>
           <Link
-            href={`/?symbol=${item.symbol}&timeframe=${item.timeframe}`}
+            href={isEntry ? `/history?symbol=${item.symbol}&timeframe=${item.timeframe}` : `/?symbol=${item.symbol}&timeframe=${item.timeframe}`}
             className="rounded-lg px-2.5 py-1 text-xs font-medium text-info transition-colors duration-150 hover:bg-info-soft"
           >
-            فتح الشارت
+            {isEntry ? "عرض الصفقة" : "فتح الشارت"}
           </Link>
         </div>
       </div>

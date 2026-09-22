@@ -12,6 +12,7 @@ import type { Candle } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
 import { detectZones } from "@/lib/zones";
 import CandlestickChart from "./CandlestickChart";
+import SymbolSearchSelect from "./SymbolSearchSelect";
 import ZonesSidebar from "./ZonesSidebar";
 
 interface FetchResult {
@@ -141,20 +142,7 @@ export default function AnalysisDashboard() {
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           العملة
-          <span className="relative">
-            <select
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value as Symbol)}
-              className="w-full appearance-none rounded-lg border border-surface-border bg-background px-3 py-2 pr-9 text-base text-foreground transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
-            >
-              {availableSymbols.map((s) => (
-                <option key={s.symbol} value={s.symbol}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" strokeWidth={2.25} />
-          </span>
+          <SymbolSearchSelect symbols={availableSymbols} value={symbol} onChange={(s) => setSymbol(s as Symbol)} />
         </label>
 
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">

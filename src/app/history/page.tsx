@@ -1,4 +1,5 @@
 import { History } from "lucide-react";
+import { Suspense } from "react";
 import TradeHistoryView from "@/components/TradeHistoryView";
 
 export default function HistoryPage() {
@@ -15,7 +16,9 @@ export default function HistoryPage() {
           </p>
         </div>
 
-        <TradeHistoryView />
+        <Suspense fallback={null}>
+          <TradeHistoryView />
+        </Suspense>
       </main>
     </div>
   );

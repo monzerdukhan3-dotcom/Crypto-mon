@@ -1,13 +1,18 @@
 "use client";
 
-import { CircleCheckBig, Layers, Loader2, RefreshCw, TrendingUp, XCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CircleCheckBig, ChevronDown, Layers, Loader2, RefreshCw, Search, TrendingUp, XCircle } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TIMEFRAMES, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import type { TradeRecord } from "@/lib/tradeHistory";
+import type { Candle } from "@/lib/types";
+import { detectZones } from "@/lib/zones";
 import type { SymbolInfo } from "@/lib/constants";
+import CandlestickChart from "./CandlestickChart";
+import type { TradePlanBox } from "./TradePlanBoxPrimitive";
 
-// Fetched in small batches rather than all 160 (40 coins × 4 timeframes) at
+// Fetched in small batches rather than all 240 (60 coins × 4 timeframes) at
 // once, so the browser isn't holding that many concurrent requests open —
 // each request is still independently cached server-side, so a second
 // visitor (or this same page, refreshed) gets most of them instantly.
@@ -68,21 +73,77 @@ function StatCard({
   );
 }
 
-function TradeRecordRow({ record }: { record: TradeRecord }) {
+interface DetailState {
+  recordId: string;
+  candles: Candle[];
+  error: string | null;
+}
+
+function RecordChartPanel({ record, detail }: { record: TradeRecord; detail: DetailState | null }) {
+  const loading = !detail || detail.recordId !== record.id;
+
+  const zones = useMemo(
+    () => (detail && !detail.error ? detectZones(detail.candles) : []),
+    [detail]
+  );
+  const tradeBox: TradePlanBox | null = useMemo(() => {
+    if (!detail || detail.error || detail.candles.length === 0) return null;
+    return {
+      entry: record.entry,
+      stopLoss: record.stopLoss,
+      targets: record.targets,
+      startTime: record.loggedAt,
+      endTime: record.resolvedAt ?? detail.candles[detail.candles.length - 1].time,
+      targetsHit: record.highestTargetHit,
+      stoppedOut: record.stoppedOut,
+    };
+  }, [detail, record]);
+
+  return (
+    <div className="mt-3 h-80 overflow-hidden rounded-xl border border-surface-border bg-background">
+      {loading ? (
+        <div className="flex h-full items-center justify-center gap-2 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin text-success" strokeWidth={2.25} />
+          جاري تحميل الشارت...
+        </div>
+      ) : detail.error ? (
+        <div className="flex h-full items-center justify-center px-4 text-center text-sm text-danger">{detail.error}</div>
+      ) : (
+        <CandlestickChart data={detail.candles} zones={zones} tradeBox={tradeBox} timeframe={record.timeframe} />
+      )}
+    </div>
+  );
+}
+
+function TradeRecordRow({
+  record,
+  expanded,
+  onToggle,
+  detail,
+}: {
+  record: TradeRecord;
+  expanded: boolean;
+  onToggle: () => void;
+  detail: DetailState | null;
+}) {
   const info = statusInfo(record);
 
   return (
     <li className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <button type="button" onClick={onToggle} className="flex w-full flex-wrap items-center justify-between gap-2 text-start">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-foreground">{record.symbol}</span>
           <span className="text-xs text-muted">{timeframeLabel(record.timeframe)}</span>
           <span className="text-xs text-muted">{formatDate(record.loggedAt)}</span>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE_CLASSES[info.tone]}`}>
-          {info.label}
-        </span>
-      </div>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE_CLASSES[info.tone]}`}>{info.label}</span>
+          <ChevronDown
+            className={`h-4 w-4 text-muted transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
+            strokeWidth={2.25}
+          />
+        </div>
+      </button>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted sm:grid-cols-3 md:grid-cols-6">
         <span>
           الدخول: <span className="font-medium text-foreground">{formatPrice(record.entry)}</span>
@@ -102,6 +163,8 @@ function TradeRecordRow({ record }: { record: TradeRecord }) {
           القوة: <span className="font-medium text-foreground">{record.confidenceScore}/100</span>
         </span>
       </div>
+
+      {expanded && <RecordChartPanel record={record} detail={detail} />}
     </li>
   );
 }
@@ -117,10 +180,24 @@ async function fetchPairHistory(symbol: string, timeframe: Timeframe): Promise<T
   }
 }
 
+async function fetchCandles(symbol: string, timeframe: Timeframe): Promise<Candle[]> {
+  const res = await fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "فشل تحميل بيانات الشارت");
+  return json.candles as Candle[];
+}
+
 export default function TradeHistoryView() {
+  const searchParams = useSearchParams();
   const [records, setRecords] = useState<TradeRecord[] | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [reloadKey, setReloadKey] = useState(0);
+  const [symbolFilter, setSymbolFilter] = useState(() => searchParams.get("symbol")?.toUpperCase() ?? "");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<DetailState | null>(null);
+  const [notFoundHint, setNotFoundHint] = useState(false);
+  const autoOpenedRef = useRef(false);
+  const candleCacheRef = useRef<Map<string, Candle[]>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +236,72 @@ export default function TradeHistoryView() {
 
   const sorted = useMemo(() => [...(records ?? [])].sort((a, b) => b.loggedAt - a.loggedAt), [records]);
 
+  const filtered = useMemo(() => {
+    const q = symbolFilter.trim().toUpperCase();
+    if (!q) return sorted;
+    return sorted.filter((r) => r.symbol.toUpperCase().includes(q));
+  }, [sorted, symbolFilter]);
+
+  // A deep link from the "opportunities now" page — once the full record
+  // set has loaded, open the newest matching record automatically so the
+  // trade that was "just activated" there shows up drawn on this page's
+  // chart, instead of leaving the visitor to find it in the list by hand.
+  useEffect(() => {
+    if (records === null || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+
+    const paramSymbol = searchParams.get("symbol")?.toUpperCase();
+    const paramTimeframe = searchParams.get("timeframe");
+    if (!paramSymbol || !paramTimeframe) return;
+
+    const match = sorted.find((r) => r.symbol.toUpperCase() === paramSymbol && r.timeframe === paramTimeframe);
+    queueMicrotask(() => {
+      if (match) {
+        setExpandedId(match.id);
+      } else {
+        setNotFoundHint(true);
+      }
+    });
+  }, [records, sorted, searchParams]);
+
+  function toggleRecord(record: TradeRecord) {
+    setExpandedId((current) => (current === record.id ? null : record.id));
+  }
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const record = sorted.find((r) => r.id === expandedId);
+    if (!record) return;
+
+    const cacheKey = `${record.symbol}:${record.timeframe}`;
+    const cached = candleCacheRef.current.get(cacheKey);
+    if (cached) {
+      setDetail({ recordId: record.id, candles: cached, error: null });
+      return;
+    }
+
+    let cancelled = false;
+    setDetail(null);
+    fetchCandles(record.symbol, record.timeframe)
+      .then((candles) => {
+        if (cancelled) return;
+        candleCacheRef.current.set(cacheKey, candles);
+        setDetail({ recordId: record.id, candles, error: null });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setDetail({
+          recordId: record.id,
+          candles: [],
+          error: error instanceof Error ? error.message : "فشل تحميل بيانات الشارت",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedId, sorted]);
+
   const stats = useMemo(() => {
     // A trade is a win as soon as it hits its first target, even if it's
     // still open toward the rest or later stops out on what's left — that
@@ -182,7 +325,8 @@ export default function TradeHistoryView() {
           بيانات حقيقية 100% من نفس السوق الحي — ليست تجربة أو محاكاة. يُحتسب تلقائيًا لأعلى 60 عملة على الأطر
           الزمنية الأربعة كلها بمجرد أن يعود السعر فعليًا لمنطقة طلب، ويُقيَّم مقابل آخر 250 شمعة حقيقية لكل عملة
           وفريم زمني. السجل يبدأ من الآن فصاعدًا فقط — لا صفقات قديمة قبل تفعيل هذا السجل — وليس محفوظًا في
-          متصفحك، فهو مطابق لكل الزوار على أي جهاز، ويتجدد تلقائيًا كل بضع دقائق.
+          متصفحك، فهو مطابق لكل الزوار على أي جهاز، ويتجدد تلقائيًا كل بضع دقائق. اضغط على أي صفقة لرؤيتها مرسومة
+          على شارتها.
         </p>
       </div>
 
@@ -197,20 +341,38 @@ export default function TradeHistoryView() {
         />
       </div>
 
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-foreground">السجل {loading ? "" : `(${sorted.length})`}</h2>
-        <button
-          onClick={() => {
-            setRecords(null);
-            setReloadKey((k) => k + 1);
-          }}
-          disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-150 hover:bg-background hover:text-foreground disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={2.25} />
-          تحديث
-        </button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:w-56">
+          <Search className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" strokeWidth={2.25} />
+          <input
+            value={symbolFilter}
+            onChange={(e) => setSymbolFilter(e.target.value)}
+            placeholder="ابحث عن عملة..."
+            className="w-full rounded-lg border border-surface-border bg-background py-2 pr-9 pl-3 text-sm text-foreground placeholder:text-muted transition-colors duration-150 hover:border-success/40 focus:outline-none focus:ring-2 focus:ring-success/40"
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold text-foreground">السجل {loading ? "" : `(${filtered.length})`}</h2>
+          <button
+            onClick={() => {
+              setRecords(null);
+              setExpandedId(null);
+              setReloadKey((k) => k + 1);
+            }}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-150 hover:bg-background hover:text-foreground disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={2.25} />
+            تحديث
+          </button>
+        </div>
       </div>
+
+      {notFoundHint && (
+        <p className="rounded-lg border border-surface-border bg-surface/60 px-4 py-2.5 text-xs leading-relaxed text-muted">
+          لم يتم العثور بعد على صفقة مسجّلة لهذه العملة والفريم الزمني — قد تحتاج بضع ثوانٍ لتُحتسب، جرّب التحديث.
+        </p>
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center gap-3 py-10 text-sm text-muted">
@@ -219,12 +381,20 @@ export default function TradeHistoryView() {
           {progress.total > 0 && ` (${progress.done}/${progress.total})`}
           ...
         </div>
-      ) : sorted.length === 0 ? (
-        <p className="text-sm text-muted">لم يتحقق أي إعداد صفقة بعد ضمن آخر 200 شمعة المتاحة لأي عملة مدعومة.</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted">
+          {symbolFilter ? "لا توجد صفقات مطابقة لبحثك." : "لم يتحقق أي إعداد صفقة بعد ضمن آخر 250 شمعة المتاحة لأي عملة مدعومة."}
+        </p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {sorted.map((r) => (
-            <TradeRecordRow key={r.id} record={r} />
+          {filtered.map((r) => (
+            <TradeRecordRow
+              key={r.id}
+              record={r}
+              expanded={expandedId === r.id}
+              onToggle={() => toggleRecord(r)}
+              detail={detail}
+            />
           ))}
         </ul>
       )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Eraser, Minus, Ruler, Slash, Timer } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -13,26 +13,28 @@ import {
 } from "lightweight-charts";
 import { TIMEFRAME_SECONDS, type Timeframe } from "@/lib/constants";
 import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
-import { computeTradePlanLineSpan } from "@/lib/tradePlan";
+import { computeTradePlanSpan } from "@/lib/tradePlan";
 import type { Candle, TradePlan, Zone } from "@/lib/types";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
 import { MeasurePrimitive, type MeasurePoint } from "./MeasurePrimitive";
-import { TradePlanLinePrimitive } from "./TradePlanLinePrimitive";
+import { TradePlanBoxPrimitive, type TradePlanBox } from "./TradePlanBoxPrimitive";
 import { ZoneRectanglePrimitive } from "./ZoneRectanglePrimitive";
 
 interface CandlestickChartProps {
   data: Candle[];
   zones?: Zone[];
   tradePlan?: TradePlan | null;
+  /**
+   * Draws the same risk/reward box as `tradePlan`, but independently of a
+   * live `Zone` — for a trade-history record, which only has its own
+   * entry/stop/targets/timestamps, not the zone that produced them. Only
+   * one of `tradePlan` / `tradeBox` is normally passed at a time.
+   */
+  tradeBox?: TradePlanBox | null;
   /** Id of a zone price is currently approaching (but hasn't reached yet) — drawn with an extra highlight. */
   highlightZoneId?: string | null;
   timeframe: Timeframe;
 }
-
-// Matches --color-danger / --color-success (see design tokens).
-const ENTRY_LINE_COLOR = "#71717a";
-const STOP_LINE_COLOR = "#f04444";
-const TARGET_LINE_COLOR = "#22c55e";
 
 // Matches the app's unified --success / --danger design tokens (globals.css).
 // Chart marks stay at these fixed, saturated values in both themes — the
@@ -59,6 +61,7 @@ export default function CandlestickChart({
   data,
   zones = [],
   tradePlan = null,
+  tradeBox = null,
   highlightZoneId = null,
   timeframe,
 }: CandlestickChartProps) {
@@ -100,6 +103,24 @@ export default function CandlestickChart({
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [data, timeframe]);
+
+  // A resolved/pending record's box can sit well behind whatever's
+  // currently active (a trade from a day ago on a fast timeframe, say),
+  // while the zoom logic below only looks at active zones — computed once
+  // here so both that zoom and the box-drawing effect agree on the same
+  // box instead of recomputing it (and potentially disagreeing) twice.
+  const resolvedBox: TradePlanBox | null = useMemo(() => {
+    if (tradeBox) return tradeBox;
+    if (tradePlan && data.length > 0) {
+      return {
+        ...computeTradePlanSpan(tradePlan, data),
+        entry: tradePlan.entry,
+        stopLoss: tradePlan.stopLoss,
+        targets: tradePlan.targets,
+      };
+    }
+    return null;
+  }, [tradeBox, tradePlan, data]);
 
   // Chart + candles + automated zone overlays. Only rebuilt when the
   // underlying data actually changes, so drawing a line doesn't reset
@@ -148,9 +169,12 @@ export default function CandlestickChart({
     }
 
     // Zoom to a range that starts a little before the earliest active zone
-    // instead of the full fetched history, so everything stays fully
-    // visible and readable without zooming out over everything we fetched.
+    // (or the trade box being drawn, if that's further back — a resolved
+    // history record can predate every currently-active zone) instead of
+    // the full fetched history, so everything stays fully visible and
+    // readable without zooming out over everything we fetched.
     const drawnStarts = zones.filter((z) => z.active).map((z) => z.startTime);
+    if (resolvedBox) drawnStarts.push(resolvedBox.startTime);
     if (drawnStarts.length > 0 && data.length > 0) {
       const earliestTime = Math.min(...drawnStarts);
       const startIndex = data.findIndex((c) => c.time >= earliestTime);
@@ -195,41 +219,28 @@ export default function CandlestickChart({
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [data, zones, highlightZoneId]);
+  }, [data, zones, highlightZoneId, resolvedBox]);
 
-  // Entry / stop-loss / target lines for the active trade plan — bounded
-  // segments (not lightweight-charts' full-width price lines): they start
-  // at the entry zone's own origin and end the moment price first reaches
-  // the stop loss or any target, or "now" if nothing's been hit yet. Reads
-  // seriesRef.current fresh rather than depending on the effect above
-  // having already run in this exact commit, and depends on `data` too so
-  // it re-attaches after that effect rebuilds the series.
+  // Risk/reward box for the active trade plan (or an explicitly passed
+  // history record's box) — a bounded shape (not lightweight-charts' full-
+  // width price lines): it starts at the entry zone's own origin and ends
+  // the moment price first reaches the stop loss or any target, or "now" if
+  // nothing's been hit yet. Reads seriesRef.current fresh rather than
+  // depending on the effect above having already run in this exact commit,
+  // and depends on `data` too so it re-attaches after that effect rebuilds
+  // the series.
   useEffect(() => {
     const series = seriesRef.current;
-    if (!series || !tradePlan || data.length === 0) return;
+    if (!series || data.length === 0 || !resolvedBox) return;
 
-    const { startTime, endTime } = computeTradePlanLineSpan(tradePlan, data);
-    const primitives = [
-      new TradePlanLinePrimitive({ price: tradePlan.entry, color: ENTRY_LINE_COLOR, title: "دخول", startTime, endTime }),
-      new TradePlanLinePrimitive({
-        price: tradePlan.stopLoss,
-        color: STOP_LINE_COLOR,
-        title: "وقف الخسارة",
-        startTime,
-        endTime,
-      }),
-      ...tradePlan.targets.map(
-        (target, i) =>
-          new TradePlanLinePrimitive({ price: target, color: TARGET_LINE_COLOR, title: `هدف ${i + 1}`, startTime, endTime })
-      ),
-    ];
-    for (const primitive of primitives) series.attachPrimitive(primitive);
+    const primitive = new TradePlanBoxPrimitive(resolvedBox);
+    series.attachPrimitive(primitive);
     chartRef.current?.applyOptions({});
 
     return () => {
-      for (const primitive of primitives) series.detachPrimitive(primitive);
+      series.detachPrimitive(primitive);
     };
-  }, [tradePlan, data]);
+  }, [resolvedBox, data]);
 
   // User-drawn lines + click handling (placing points, and click-to-delete
   // in idle mode). Kept separate from the effect above so drawing a line

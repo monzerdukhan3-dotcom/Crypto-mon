@@ -126,14 +126,14 @@ export function findApproachingDemandZone(
 }
 
 /**
- * The time span a trade plan's entry/stop/target lines should be drawn
- * over: starting at the zone's own origin (its narrow box's end — where the
- * entry level was actually established) and ending the moment price first
- * reaches the stop loss or any target, whichever comes first — the same
- * "worst case first" convention tradeHistory.ts uses to resolve a trade.
- * Runs to the last available candle if nothing has been hit yet.
+ * The time span a live trade plan's risk/reward box should be drawn over:
+ * starting at the zone's own origin (its narrow box's end — where the entry
+ * level was actually established) and ending the moment price first reaches
+ * the stop loss or any target, whichever comes first — the same "worst case
+ * first" convention tradeHistory.ts uses to resolve a trade. Runs to the
+ * last available candle if nothing has been hit yet.
  */
-export function computeTradePlanLineSpan(tradePlan: TradePlan, candles: Candle[]): { startTime: number; endTime: number } {
+export function computeTradePlanSpan(tradePlan: TradePlan, candles: Candle[]): { startTime: number; endTime: number } {
   const startIndex = candles.findIndex((c) => c.time >= tradePlan.zone.endTime);
   const fromIndex = startIndex === -1 ? 0 : startIndex;
   const startTime = candles[fromIndex]?.time ?? tradePlan.zone.endTime;
