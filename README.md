@@ -34,3 +34,14 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## منصة الدراسات (`/studies`)
+
+النسخة الأولى (MVP) من منصة إدارة وتنفيذ الدراسات — الرحلة الأساسية كاملة من طلب العميل حتى تأكيد استلام التقرير.
+
+- **العميل**: يطلب الدراسة من `/studies/request` (أو يحفظها مسودة) ويحصل على رابط خاص بدراسته `/studies/c/<token>`.
+- **مدير الدراسة**: `/studies/m/<token>` — الخطة، الفريق والمهام، جودة البيانات، اعتماد التقرير وتسليمه.
+- **الباحث / المحلل**: `/studies/r/<token>` — مهامه فقط، ودراسات التحليل المسندة إليه.
+- لا توجد حسابات: الوصول بالروابط الفريدة فقط. المديرون والباحثون يُضافون يدويًا في `.data/studies/db.json` (يُنشأ تلقائيًا مع بيانات أولية عند أول تشغيل).
+- `/studies/demo` يعرض كل روابط الوصول للتجربة (معطّل في الإنتاج إلا مع `STUDIES_DEMO_LINKS=1`).
+- التخزين ملف JSON وملفات مرفوعة في `STUDIES_DATA_DIR` (الافتراضي `.data/studies`). على الاستضافات عديمة الحالة (مثل Vercel) يجب ربطه بمجلد دائم أو استبدال `src/lib/studies/store.ts` بقاعدة بيانات.
