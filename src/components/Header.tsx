@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, History, LogOut, Settings } from "lucide-react";
+import { BellRing, History, Home, LogOut, Settings } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 
 const NAV_ITEMS = [
+  { href: "/", label: "الرئيسية", icon: Home },
   { href: "/opportunities", label: "الفرص الآن", icon: BellRing },
   { href: "/history", label: "سجل الصفقات", icon: History },
 ];
