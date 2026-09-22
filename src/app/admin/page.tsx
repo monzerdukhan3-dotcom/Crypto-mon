@@ -1,5 +1,6 @@
 import { Settings } from "lucide-react";
 import AdminFundamentalNotes from "@/components/AdminFundamentalNotes";
+import AdminUsers from "@/components/AdminUsers";
 
 export default function AdminPage() {
   return (
@@ -16,6 +17,7 @@ export default function AdminPage() {
         </div>
 
         <AdminFundamentalNotes />
+        <AdminUsers />
       </main>
     </div>
   );

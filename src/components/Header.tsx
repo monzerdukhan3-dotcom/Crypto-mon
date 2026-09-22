@@ -1,6 +1,7 @@
 "use client";
 
-import { BellRing, History, Settings } from "lucide-react";
+import { BellRing, History, LogOut, Settings } from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
 
 export default function Header() {
   const pathname = usePathname();
+  const { data: session } = useSession();
 
   return (
     <header className="sticky top-0 z-10 border-b border-surface-border bg-background/80 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -49,6 +51,16 @@ export default function Header() {
             );
           })}
           <ThemeToggle />
+          {session && (
+            <button
+              type="button"
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              title="تسجيل الخروج"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-danger-soft hover:text-danger"
+            >
+              <LogOut className="h-4 w-4" strokeWidth={2.25} />
+            </button>
+          )}
         </nav>
       </div>
     </header>

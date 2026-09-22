@@ -1,0 +1,24 @@
+import Image from "next/image";
+import LoginForm from "@/components/LoginForm";
+
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const params = await searchParams;
+  const callbackUrlParam = params?.callbackUrl;
+  const callbackUrl = typeof callbackUrlParam === "string" && callbackUrlParam.startsWith("/") ? callbackUrlParam : "/";
+
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center px-6 py-10">
+      <div className="flex w-full max-w-sm flex-col items-center gap-6">
+        <span className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full shadow-md ring-1 ring-success/30">
+          <Image src="/logo-mark.png" alt="MDA Crypto" fill sizes="56px" className="object-cover" priority />
+        </span>
+        <div className="flex flex-col items-center gap-1 text-center">
+          <h1 className="text-xl font-bold text-foreground">تسجيل الدخول</h1>
+          <p className="text-sm text-muted">Crypto-mon — أداة التحليل الفني</p>
+        </div>
+
+        <LoginForm callbackUrl={callbackUrl} />
+      </div>
+    </div>
+  );
+}
