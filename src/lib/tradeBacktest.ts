@@ -77,6 +77,11 @@ export function backtestTradeHistory(
     const plan = planFromZone(zone, zones);
     if (!plan) continue;
 
+    // Strip the pivotIndex detectZoneHistory adds internally — the record
+    // only needs the plain Zone shape it'll later draw on its own chart.
+    const { pivotIndex: _pivotIndex, ...zoneWithoutPivot } = zone;
+    void _pivotIndex;
+
     const preliminary: TradeRecord = {
       id: `${symbol}:${timeframe}:${zone.id}`,
       symbol,
@@ -86,6 +91,7 @@ export function backtestTradeHistory(
       stopLoss: plan.stopLoss,
       targets: plan.targets,
       riskRewardRatios: plan.riskRewardRatios,
+      zone: zoneWithoutPivot,
       confidenceScore: 0,
       highestTargetHit: 0,
       stoppedOut: false,

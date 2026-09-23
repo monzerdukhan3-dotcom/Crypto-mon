@@ -7,7 +7,6 @@ import { TIMEFRAMES, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import type { TradeRecord } from "@/lib/tradeHistory";
 import type { Candle } from "@/lib/types";
-import { detectZones } from "@/lib/zones";
 import type { SymbolInfo } from "@/lib/constants";
 import CandlestickChart from "./CandlestickChart";
 import type { TradePlanBox } from "./TradePlanBoxPrimitive";
@@ -82,9 +81,13 @@ interface DetailState {
 function RecordChartPanel({ record, detail }: { record: TradeRecord; detail: DetailState | null }) {
   const loading = !detail || detail.recordId !== record.id;
 
+  // The record's own zone, not today's live-detected zones — a resolved or
+  // old trade's zone can have since broken or dropped out of today's top-N
+  // ranking, and re-detecting live would draw a completely different,
+  // unrelated zone instead of the one that actually produced this trade.
   const zones = useMemo(
-    () => (detail && !detail.error ? detectZones(detail.candles) : []),
-    [detail]
+    () => (detail && !detail.error ? [record.zone] : []),
+    [detail, record]
   );
   const tradeBox: TradePlanBox | null = useMemo(() => {
     if (!detail || detail.error || detail.candles.length === 0) return null;

@@ -648,6 +648,32 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
  *   height is dropped — no room to run
  * - only the strongest few zones of each type are kept
  */
+/**
+ * Every currently-active zone that passed every filter (validated, merged,
+ * room-to-run, far enough from price) — the same set detectZones itself
+ * caps down to the strongest few of each type before returning. Meant for
+ * anything that needs to find a genuinely open position rather than decide
+ * what to draw: detectZones' top-N cap exists purely to keep the chart
+ * uncluttered, so searching only that capped list for an open trade plan
+ * can lose one the moment a newer, stronger zone bumps it out of the
+ * ranking — even though the position itself hasn't hit its stop or any
+ * target. That's exactly the failure detectZoneHistory's own uncapped
+ * search already avoids for the trade-history backtest (see its own doc
+ * comment); this gives the live dashboard and the opportunities scan the
+ * same uncapped search, so a trade doesn't silently vanish from either one
+ * while still showing as open in /history.
+ */
+export function detectActiveZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
+  const { activeOnly } = computeEvaluatedZones(candles, options);
+  return activeOnly
+    .sort((a, b) => a.startTime - b.startTime)
+    .map((zone): Zone => {
+      const { pivotIndex, ...rest } = zone;
+      void pivotIndex;
+      return rest;
+    });
+}
+
 export function detectZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
   const { maxDemandZones = 3, maxSupplyZones = 2 } = options;
   const { activeOnly } = computeEvaluatedZones(candles, options);

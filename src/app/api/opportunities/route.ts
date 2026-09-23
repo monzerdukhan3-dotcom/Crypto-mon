@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
 import { buildTradePlan, findApproachingDemandZone, getTradePlanProgress } from "@/lib/tradePlan";
-import { detectZones } from "@/lib/zones";
+import { detectActiveZones } from "@/lib/zones";
 import type { Timeframe } from "@/lib/constants";
 
 const SYMBOL_PATTERN = /^[A-Za-z0-9]{1,15}$/;
@@ -51,7 +51,12 @@ export async function GET(request: NextRequest) {
     }
 
     const currentPrice = candles[candles.length - 1].close;
-    const zones = detectZones(candles, { higherTimeframeCandles: dailyCandles });
+    // Uncapped: searching only the chart's own top-N cosmetic cap would let
+    // a genuinely open position silently drop out of this scan the moment a
+    // newer, stronger zone outranks it — exactly the bug already fixed for
+    // /history, now applied here too so an "entry" never disappears from
+    // this page while /history still shows it as open.
+    const zones = detectActiveZones(candles, { higherTimeframeCandles: dailyCandles });
     const tradePlan = buildTradePlan(zones, currentPrice, candles);
     // A plan that already reached one of its targets is still a genuinely
     // open position (see /history and the coin's own chart), but it's no

@@ -8,9 +8,9 @@ import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
-import type { Candle } from "@/lib/types";
+import type { Candle, Zone } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
-import { detectZones } from "@/lib/zones";
+import { detectActiveZones, detectZones } from "@/lib/zones";
 import CandlestickChart from "./CandlestickChart";
 import SymbolSearchSelect from "./SymbolSearchSelect";
 import ZonesSidebar from "./ZonesSidebar";
@@ -122,28 +122,51 @@ export default function AnalysisDashboard() {
   );
   const currentPrice = candles.length > 0 ? candles[candles.length - 1].close : null;
 
+  // Capped to the strongest few of each type — what the chart actually
+  // draws, and what the sidebar's zone list shows by default.
   const zones = useMemo(
     () => detectZones(candles, { higherTimeframeCandles: dailyCandles }),
     [candles, dailyCandles]
   );
+  // Uncapped: searched for an open trade plan / approaching zone so a
+  // genuinely open position can't silently disappear from this dashboard
+  // (or the opportunities scan, which applies the same fix) just because a
+  // newer, stronger zone has since pushed it out of the chart's own
+  // cosmetic top-N — matching /history, which already searches uncapped.
+  const activeZones = useMemo(
+    () => detectActiveZones(candles, { higherTimeframeCandles: dailyCandles }),
+    [candles, dailyCandles]
+  );
   const tradePlan = useMemo(
-    () => (currentPrice !== null ? buildTradePlan(zones, currentPrice, candles) : null),
-    [zones, currentPrice, candles]
+    () => (currentPrice !== null ? buildTradePlan(activeZones, currentPrice, candles) : null),
+    [activeZones, currentPrice, candles]
   );
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
   const approachingZone = useMemo(
-    () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(zones, currentPrice, candles) : null),
-    [tradePlan, zones, currentPrice, candles]
+    () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(activeZones, currentPrice, candles) : null),
+    [tradePlan, activeZones, currentPrice, candles]
   );
   const confidence = useMemo(
-    () => (tradePlan ? scoreTradeConfidence(tradePlan, zones, candles, dailyCandles) : null),
-    [tradePlan, zones, candles, dailyCandles]
+    () => (tradePlan ? scoreTradeConfidence(tradePlan, activeZones, candles, dailyCandles) : null),
+    [tradePlan, activeZones, candles, dailyCandles]
   );
   const technicalSummary = useMemo(
     () => (currentPrice !== null ? generateTechnicalSummary(candles, zones, currentPrice) : ""),
     [candles, zones, currentPrice]
   );
+  // Guarantees the trade plan card's own zone (and the approaching-zone
+  // alert's zone) are always among what's drawn on the chart / listed in
+  // the sidebar, even when either fell outside detectZones' cosmetic top-N
+  // cap — otherwise the sidebar could show an active "خطة الصفقة" or
+  // "تقترب من منطقة طلب" note for a zone the chart never actually outlines.
+  const displayZones = useMemo(() => {
+    const extra = [tradePlan?.zone, approachingZone].filter(
+      (z): z is Zone => z !== null && z !== undefined && !zones.some((existing) => existing.id === z.id)
+    );
+    if (extra.length === 0) return zones;
+    return [...zones, ...extra].sort((a, b) => a.startTime - b.startTime);
+  }, [zones, tradePlan, approachingZone]);
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
   const tradeProgress = useMemo(
     () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice) : null),
@@ -221,7 +244,7 @@ export default function AnalysisDashboard() {
             <CandlestickChart
               symbol={symbol}
               data={candles}
-              zones={zones}
+              zones={displayZones}
               tradePlan={tradePlan}
               highlightZoneId={approachingZone?.id ?? null}
               timeframe={timeframe}
@@ -233,7 +256,7 @@ export default function AnalysisDashboard() {
           <div className="animate-fade-in-up w-full lg:w-80" style={{ animationDelay: "240ms" }}>
             <ZonesSidebar
               symbol={symbol}
-              zones={zones}
+              zones={displayZones}
               tradePlan={tradePlan}
               approachingZone={approachingZone}
               tradeProgress={tradeProgress}

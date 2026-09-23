@@ -1,5 +1,5 @@
 import type { Timeframe } from "./constants";
-import type { Candle } from "./types";
+import type { Candle, Zone } from "./types";
 
 export interface TradeRecord {
   id: string;
@@ -10,6 +10,16 @@ export interface TradeRecord {
   stopLoss: number;
   targets: number[];
   riskRewardRatios: number[];
+  /**
+   * The exact zone this record's plan came from — kept on the record itself
+   * (rather than re-detected from today's candles when the chart's drawn)
+   * so an old or already-resolved trade's chart always shows the zone that
+   * actually produced it, even once that zone has broken or dropped out of
+   * detectZones' current top-N ranking. Re-detecting live would draw
+   * whatever's active *today*, which is frequently a different zone
+   * entirely from the one this specific trade was based on.
+   */
+  zone: Zone;
   confidenceScore: number;
   /** Highest target index reached so far (0 = none). */
   highestTargetHit: number;
