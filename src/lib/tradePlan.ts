@@ -237,6 +237,41 @@ export function findApproachingDemandZone(
 }
 
 /**
+ * The nearest zone to `currentPrice` that has since broken (`active:
+ * false`) — the zone that would otherwise just silently stop being drawn
+ * once price closed decisively through it, leaving no trace of why a
+ * demand/supply box that was on the chart a moment ago is now gone. Only
+ * worth surfacing while price is still nearby (same watch band as
+ * findApproachingDemandZone); an old break from weeks back that price has
+ * long since moved away from isn't relevant context anymore. Purely
+ * informational — CandlestickChart renders it dimmed and dashed with a
+ * "منطقة مكسورة" label instead of the normal solid box, and it never
+ * feeds into buildTradePlan or any other trading decision.
+ */
+export function findRecentlyBrokenZone(
+  zones: Zone[],
+  currentPrice: number,
+  candles: Candle[],
+  options: { watchDistanceAtrRatio?: number } = {}
+): Zone | null {
+  const { watchDistanceAtrRatio = 6 } = options;
+
+  const referenceAtr = latestAtr(candles);
+  if (referenceAtr === null) return null;
+  const maxDistance = referenceAtr * watchDistanceAtrRatio;
+
+  function distanceToPrice(zone: Zone): number {
+    if (currentPrice >= zone.bottom && currentPrice <= zone.top) return 0;
+    return currentPrice > zone.top ? currentPrice - zone.top : zone.bottom - currentPrice;
+  }
+
+  const candidates = zones.filter((z) => !z.active && distanceToPrice(z) <= maxDistance);
+  if (candidates.length === 0) return null;
+
+  return candidates.reduce((closest, zone) => (distanceToPrice(zone) < distanceToPrice(closest) ? zone : closest));
+}
+
+/**
  * The time span a live trade plan's risk/reward box should be drawn over:
  * starting at the actual entry candle (the first return to the zone, which
  * can be well after the zone's own narrow formation box if the position has
