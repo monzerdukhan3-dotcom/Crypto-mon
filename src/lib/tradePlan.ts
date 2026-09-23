@@ -142,19 +142,29 @@ export function planFromZone(
 }
 
 /**
- * Builds an automatic trade plan off an active demand zone with a currently
- * open position on it — price has, at some point since the zone formed,
- * closed at or inside it (a real return, not merely a wick through), and
- * that resulting trade hasn't since hit its stop loss or all of its
- * targets. This is deliberately NOT "is currentPrice inside the zone right
- * now": a live snapshot like that would lose the plan the moment price
- * ticks back away from a zone it only just tagged, even though the trade it
- * triggered is still open — exactly the same entry+resolution logic the
- * trade-history backtest uses, so a zone showing an open position here is
- * the same zone that shows a "قيد الانتظار" record in /history. A zone
- * price hasn't returned to at all yet is a level to watch (see
- * findApproachingDemandZone), not a live setup, so it's excluded here even
- * though it's still a perfectly valid zone for the sidebar's zone list.
+ * Builds an automatic trade plan off a demand zone with a currently open
+ * position on it — price has, at some point since the zone formed, closed
+ * at or inside it (a real return, not merely a wick through), and that
+ * resulting trade hasn't since hit its stop loss or all of its targets.
+ * This is deliberately NOT "is currentPrice inside the zone right now": a
+ * live snapshot like that would lose the plan the moment price ticks back
+ * away from a zone it only just tagged, even though the trade it triggered
+ * is still open — exactly the same entry+resolution logic the trade-history
+ * backtest uses, so a zone showing an open position here is the same zone
+ * that shows a "قيد الانتظار" record in /history. A zone price hasn't
+ * returned to at all yet is a level to watch (see findApproachingDemandZone),
+ * not a live setup, so it's excluded here even though it's still a
+ * perfectly valid zone for the sidebar's zone list.
+ *
+ * Deliberately NOT gated on zone.active either, for the same reason: the
+ * stop loss sits a buffer below the zone's own raw bottom (see
+ * planFromZone's stopBufferRatio), so price can close below that raw
+ * bottom — marking the zone box itself "broken" for display purposes —
+ * without actually reaching the trade's real stop loss. The trade-history
+ * backtest never checks zone.active at all, only the real stop/targets via
+ * isEntryStillOpen below; gating on it here too would make a position
+ * buildTradePlan can no longer see for a plan /history still correctly
+ * shows as open — confirmed directly against live data (FLOW/4h).
  *
  * "تداخل المناطق": when this timeframe's own trend wasn't clearly up as of
  * the entry candle, a demand zone here was only safe to buy if it overlaps
@@ -170,7 +180,7 @@ export function buildTradePlan(
   options: BuildTradePlanOptions = {}
 ): TradePlan | null {
   const openZones = zones.filter((zone) => {
-    if (zone.type !== "demand" || !zone.active) return false;
+    if (zone.type !== "demand") return false;
 
     const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
     if (entryIndex === -1) return false;

@@ -615,16 +615,12 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
     return distance >= zoneHeight * minOpposingZoneDistanceRatio;
   });
 
-  const activeOnly = withRoomToRun.filter((zone) => {
-    if (!zone.active) return false;
-    const distanceToPrice =
-      currentPrice >= zone.bottom && currentPrice <= zone.top
-        ? 0
-        : currentPrice > zone.top
-          ? currentPrice - zone.top
-          : zone.bottom - currentPrice;
-    return distanceToPrice >= minDistanceFromPrice;
-  });
+  // Deliberately NOT filtered by distance from price here (see
+  // minDistanceFromPrice below, applied only in detectZones): a zone price
+  // has already returned into — distance 0, the exact moment a pending
+  // trade actually triggers — must stay searchable for an open position,
+  // not get treated as "too close to bother with."
+  const activeOnly = withRoomToRun.filter((zone) => zone.active);
 
   return { all: withRoomToRun, activeOnly, currentPrice, minDistanceFromPrice };
 }
@@ -649,23 +645,39 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
  * - only the strongest few zones of each type are kept
  */
 /**
- * Every currently-active zone that passed every filter (validated, merged,
- * room-to-run, far enough from price) — the same set detectZones itself
- * caps down to the strongest few of each type before returning. Meant for
+ * Every validated, merged zone that passed room-to-run — deliberately the
+ * same uncapped, unfiltered set detectZoneHistory's own `all` exposes for
+ * the trade-history backtest, not detectZones' `activeOnly`. Meant for
  * anything that needs to find a genuinely open position rather than decide
- * what to draw: detectZones' top-N cap exists purely to keep the chart
- * uncluttered, so searching only that capped list for an open trade plan
- * can lose one the moment a newer, stronger zone bumps it out of the
- * ranking — even though the position itself hasn't hit its stop or any
- * target. That's exactly the failure detectZoneHistory's own uncapped
+ * what to draw, because a live position can still be genuinely open even
+ * when:
+ * - detectZones' top-N cap has since pushed its zone out of the ranking
+ *   (a newer, stronger zone formed) — the position itself hasn't hit its
+ *   stop or any target, only the chart's own cosmetic ranking changed.
+ * - detectZones drops a zone within half an ATR of the current price as
+ *   "too close to bother suggesting as a fresh entry" — but that's exactly
+ *   the state a zone is in once price has actually returned into it and
+ *   triggered a real position (distance 0).
+ * - the zone itself has since gone `active: false` (a candle closed below
+ *   its raw bottom) — but the trade's actual stop loss sits a buffer
+ *   further below that raw bottom (see planFromZone's stopBufferRatio), so
+ *   the position itself can still be genuinely open even once the zone box
+ *   is marked broken for display purposes. buildTradePlan's own
+ *   isEntryStillOpen check (using the real stop loss, not the zone's raw
+ *   bottom) is what actually decides whether it's still open — the same
+ *   check the trade-history backtest itself relies on, with no `.active`
+ *   condition of its own either.
+ * All three are exactly the class of failure detectZoneHistory's own
  * search already avoids for the trade-history backtest (see its own doc
  * comment); this gives the live dashboard and the opportunities scan the
- * same uncapped search, so a trade doesn't silently vanish from either one
- * while still showing as open in /history.
+ * same search, so a trade doesn't silently vanish from either one while
+ * still showing as open in /history. Confirmed directly against live data
+ * for all three (ARB/4h for the cap, ATOM/4h for the price-distance case,
+ * FLOW/4h for the broken-zone-but-open-trade case).
  */
-export function detectActiveZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
-  const { activeOnly } = computeEvaluatedZones(candles, options);
-  return activeOnly
+export function detectSearchableZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
+  const { all } = computeEvaluatedZones(candles, options);
+  return all
     .sort((a, b) => a.startTime - b.startTime)
     .map((zone): Zone => {
       const { pivotIndex, ...rest } = zone;
@@ -676,13 +688,27 @@ export function detectActiveZones(candles: Candle[], options: DetectZonesOptions
 
 export function detectZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
   const { maxDemandZones = 3, maxSupplyZones = 2 } = options;
-  const { activeOnly } = computeEvaluatedZones(candles, options);
+  const { activeOnly, currentPrice, minDistanceFromPrice } = computeEvaluatedZones(candles, options);
+
+  // Zones sitting within half an ATR of the current price are dropped as
+  // impractically close to suggest as a fresh entry — display-only, so a
+  // zone price has already returned into (and possibly triggered a trade
+  // on) doesn't disappear from the live search too; see detectSearchableZones.
+  const tradeable = activeOnly.filter((zone) => {
+    const distanceToPrice =
+      currentPrice >= zone.bottom && currentPrice <= zone.top
+        ? 0
+        : currentPrice > zone.top
+          ? currentPrice - zone.top
+          : zone.bottom - currentPrice;
+    return distanceToPrice >= minDistanceFromPrice;
+  });
 
   const capped: Zone[] = [];
   for (const type of ["demand", "supply"] as const) {
     const max = type === "demand" ? maxDemandZones : maxSupplyZones;
     capped.push(
-      ...activeOnly
+      ...tradeable
         .filter((z) => z.type === type)
         .sort((a, b) => b.strengthScore - a.strengthScore || a.testCount - b.testCount)
         .slice(0, max)

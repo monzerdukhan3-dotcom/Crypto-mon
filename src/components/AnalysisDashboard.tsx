@@ -10,7 +10,7 @@ import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
 import type { Candle, Zone } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
-import { detectActiveZones, detectZones } from "@/lib/zones";
+import { detectSearchableZones, detectZones } from "@/lib/zones";
 import CandlestickChart from "./CandlestickChart";
 import SymbolSearchSelect from "./SymbolSearchSelect";
 import ZonesSidebar from "./ZonesSidebar";
@@ -128,28 +128,31 @@ export default function AnalysisDashboard() {
     () => detectZones(candles, { higherTimeframeCandles: dailyCandles }),
     [candles, dailyCandles]
   );
-  // Uncapped: searched for an open trade plan / approaching zone so a
-  // genuinely open position can't silently disappear from this dashboard
-  // (or the opportunities scan, which applies the same fix) just because a
-  // newer, stronger zone has since pushed it out of the chart's own
-  // cosmetic top-N — matching /history, which already searches uncapped.
-  const activeZones = useMemo(
-    () => detectActiveZones(candles, { higherTimeframeCandles: dailyCandles }),
+  // Uncapped and unfiltered by displayable-ness: searched for an open trade
+  // plan / approaching zone so a genuinely open position can't silently
+  // disappear from this dashboard (or the opportunities scan, which
+  // applies the same fix) just because a newer, stronger zone has since
+  // pushed it out of the chart's own cosmetic top-N, price sits right at
+  // it, or the zone box itself has since broken while the trade's own
+  // stop loss (a buffer further below) hasn't — matching /history, which
+  // already searches this same unrestricted set.
+  const searchableZones = useMemo(
+    () => detectSearchableZones(candles, { higherTimeframeCandles: dailyCandles }),
     [candles, dailyCandles]
   );
   const tradePlan = useMemo(
-    () => (currentPrice !== null ? buildTradePlan(activeZones, currentPrice, candles) : null),
-    [activeZones, currentPrice, candles]
+    () => (currentPrice !== null ? buildTradePlan(searchableZones, currentPrice, candles) : null),
+    [searchableZones, currentPrice, candles]
   );
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
   const approachingZone = useMemo(
-    () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(activeZones, currentPrice, candles) : null),
-    [tradePlan, activeZones, currentPrice, candles]
+    () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(searchableZones, currentPrice, candles) : null),
+    [tradePlan, searchableZones, currentPrice, candles]
   );
   const confidence = useMemo(
-    () => (tradePlan ? scoreTradeConfidence(tradePlan, activeZones, candles, dailyCandles) : null),
-    [tradePlan, activeZones, candles, dailyCandles]
+    () => (tradePlan ? scoreTradeConfidence(tradePlan, searchableZones, candles, dailyCandles) : null),
+    [tradePlan, searchableZones, candles, dailyCandles]
   );
   const technicalSummary = useMemo(
     () => (currentPrice !== null ? generateTechnicalSummary(candles, zones, currentPrice) : ""),
