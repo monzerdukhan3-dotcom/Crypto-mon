@@ -1,23 +1,9 @@
 import { Check, MessageCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { getTelegramContactUrl } from "@/lib/telegram";
 
-// Billing is manual (no Stripe): the visitor messages this Telegram
-// account, the owner confirms payment, then extends their access from
-// /admin. Set TELEGRAM_CONTACT_URL to a full link (e.g.
-// https://t.me/your_username) — but normalized below regardless, since a
-// bare "@username" or "username" is an easy, otherwise-silent mistake to
-// make (renders as a broken relative link instead of a real Telegram URL,
-// with nothing about it looking wrong until someone actually clicks it).
-function normalizeTelegramUrl(raw: string): string {
-  const trimmed = raw.trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://t.me/${trimmed.replace(/^@/, "")}`;
-}
-
-const TELEGRAM_CONTACT_URL = normalizeTelegramUrl(
-  process.env.TELEGRAM_CONTACT_URL || "https://t.me/REPLACE_WITH_YOUR_TELEGRAM_USERNAME"
-);
+const TELEGRAM_CONTACT_URL = getTelegramContactUrl();
 
 const FEATURES = [
   "شارت حي مع تحليل مناطق العرض والطلب تلقائيًا",

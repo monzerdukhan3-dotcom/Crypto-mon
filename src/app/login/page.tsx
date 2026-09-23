@@ -1,6 +1,10 @@
+import { MessageCircle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import LoginForm from "@/components/LoginForm";
+import { getTelegramContactUrl } from "@/lib/telegram";
+
+const TELEGRAM_CONTACT_URL = getTelegramContactUrl();
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const params = await searchParams;
@@ -27,11 +31,25 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           </Link>
         </p>
 
+        <div className="flex w-full flex-col gap-2">
+          <a
+            href={TELEGRAM_CONTACT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 rounded-lg bg-success px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-success/90"
+          >
+            <MessageCircle className="h-4 w-4" strokeWidth={2.25} />
+            تواصل عبر تلغرام للاشتراك
+          </a>
+          <Link
+            href="/pricing"
+            className="flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium text-foreground ring-1 ring-surface-border transition-colors duration-150 hover:bg-surface"
+          >
+            عرض الأسعار
+          </Link>
+        </div>
+
         <p className="text-center text-xs text-muted">
-          <Link href="/pricing" className="hover:text-success hover:underline">
-            الأسعار
-          </Link>{" "}
-          ·{" "}
           <Link href="/track-record" className="hover:text-success hover:underline">
             سجل الأداء
           </Link>{" "}
