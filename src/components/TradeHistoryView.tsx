@@ -109,7 +109,14 @@ function RecordChartPanel({ record, detail }: { record: TradeRecord; detail: Det
       ) : detail.error ? (
         <div className="flex h-full items-center justify-center px-4 text-center text-sm text-danger">{detail.error}</div>
       ) : (
-        <CandlestickChart data={detail.candles} zones={zones} tradeBox={tradeBox} timeframe={record.timeframe} />
+        <CandlestickChart
+          symbol={record.symbol}
+          data={detail.candles}
+          zones={zones}
+          tradeBox={tradeBox}
+          timeframe={record.timeframe}
+          chartKey={record.id}
+        />
       )}
     </div>
   );

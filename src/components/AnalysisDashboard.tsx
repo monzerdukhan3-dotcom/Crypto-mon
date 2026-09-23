@@ -22,6 +22,13 @@ interface FetchResult {
   error: string | null;
 }
 
+// Matches /api/candles' own 30s cache window — polling faster wouldn't get
+// fresher data anyway. Without this, a chart loaded once never picks up a
+// newly-closed candle (or the current one's live price) until the page is
+// reloaded, since the fetch effect below only otherwise re-runs when the
+// symbol or timeframe itself changes.
+const REFRESH_MS = 30_000;
+
 async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Candle[]> {
   const res = await fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`);
   const json = await res.json();
@@ -66,29 +73,39 @@ export default function AnalysisDashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      fetchCandleSet(symbol, timeframe),
-      // Higher-timeframe trend confirmation: skip the extra fetch when
-      // already viewing the daily chart, and don't let it fail the whole
-      // request if it errors — it's a confirmation signal, not core data.
-      timeframe === "1d" ? Promise.resolve(null) : fetchCandleSet(symbol, "1d").catch(() => null),
-    ])
-      .then(([candles, dailyCandles]) => {
-        if (cancelled) return;
-        setResult({ key: requestKey, candles, dailyCandles, error: null });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setResult({
-          key: requestKey,
-          candles: [],
-          dailyCandles: null,
-          error: error instanceof Error ? error.message : "فشل تحميل البيانات",
+    function load() {
+      Promise.all([
+        fetchCandleSet(symbol, timeframe),
+        // Higher-timeframe trend confirmation: skip the extra fetch when
+        // already viewing the daily chart, and don't let it fail the whole
+        // request if it errors — it's a confirmation signal, not core data.
+        timeframe === "1d" ? Promise.resolve(null) : fetchCandleSet(symbol, "1d").catch(() => null),
+      ])
+        .then(([candles, dailyCandles]) => {
+          if (cancelled) return;
+          setResult({ key: requestKey, candles, dailyCandles, error: null });
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setResult({
+            key: requestKey,
+            candles: [],
+            dailyCandles: null,
+            error: error instanceof Error ? error.message : "فشل تحميل البيانات",
+          });
         });
-      });
+    }
+
+    load();
+    // Same `requestKey` on every tick here, so `status` below stays "ready"
+    // across a refresh instead of flashing back to the loading state —
+    // this just quietly swaps in fresher candles (and the chart primitives
+    // that depend on them) once they arrive.
+    const interval = setInterval(load, REFRESH_MS);
 
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, [symbol, timeframe, requestKey]);
 
@@ -202,6 +219,7 @@ export default function AnalysisDashboard() {
           )}
           {status === "ready" && (
             <CandlestickChart
+              symbol={symbol}
               data={candles}
               zones={zones}
               tradePlan={tradePlan}

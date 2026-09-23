@@ -34,6 +34,7 @@ export interface IndicatorToggles {
 export const DEFAULT_INDICATORS: IndicatorToggles = { volume: true, ma: false, rsi: false, macd: false };
 
 interface CandlestickChartProps {
+  symbol: string;
   data: Candle[];
   zones?: Zone[];
   tradePlan?: TradePlan | null;
@@ -47,6 +48,18 @@ interface CandlestickChartProps {
   /** Id of a zone price is currently approaching (but hasn't reached yet) — drawn with an extra highlight. */
   highlightZoneId?: string | null;
   timeframe: Timeframe;
+  /**
+   * Overrides what counts as "a genuinely different chart" (rebuilds the
+   * chart and resets zoom) vs. "the same chart, just refreshed data" (keeps
+   * the chart alive, preserving zoom/pan/drawings). Defaults to
+   * `symbol:timeframe`, right for a single live dashboard where the same
+   * instrument's data simply refreshes over time. A view that can show
+   * multiple distinct records for the same symbol+timeframe side by side —
+   * trade history's per-record detail chart — should pass something unique
+   * per record (its id) instead, so switching between two same-symbol
+   * trades still gets its own dedicated zoom.
+   */
+  chartKey?: string;
 }
 
 // Matches the app's unified --success / --danger design tokens (globals.css).
@@ -89,12 +102,14 @@ function formatCountdown(seconds: number): string {
 }
 
 export default function CandlestickChart({
+  symbol,
   data,
   zones = [],
   tradePlan = null,
   tradeBox = null,
   highlightZoneId = null,
   timeframe,
+  chartKey,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -192,9 +207,31 @@ export default function CandlestickChart({
     return null;
   }, [tradeBox, tradePlan, data]);
 
-  // Chart + candles + automated zone overlays. Only rebuilt when the
-  // underlying data actually changes, so drawing a line doesn't reset
-  // zoom/pan.
+  // Identifies the actual instrument being shown — a change here means a
+  // genuinely different chart (different price scale, different history),
+  // unlike a periodic refresh of the SAME instrument's candles (see
+  // AnalysisDashboard's 30s poll, which exists so a newly-closed candle
+  // shows up without a page reload).
+  const instrumentKey = chartKey ?? `${symbol}:${timeframe}`;
+  // True once this instrument's chart has been zoomed to its default range
+  // at least once — reset on every genuine instrument change, so a later
+  // data refresh of the SAME instrument never zooms again and undoes
+  // whatever the user panned/zoomed to.
+  const hasZoomedRef = useRef(false);
+  // Keeps the resize/pan-triggered updatePriceY below reading whatever
+  // candle set is current, without the chart-creation effect itself having
+  // to depend on `data` — depending on it would tear the whole chart down
+  // (and reset zoom/pan, and every drawn line and indicator) on every
+  // periodic refresh instead of just the candles updating in place.
+  const latestDataRef = useRef(data);
+  useEffect(() => {
+    latestDataRef.current = data;
+  }, [data]);
+
+  // Chart + series creation — keyed only on the instrument itself, not on
+  // `data`. A periodic refetch of the same symbol/timeframe (or zones/the
+  // trade box changing as a result) must not recreate this: that would
+  // reset the user's zoom/pan for no reason, on every single refresh.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -222,45 +259,12 @@ export default function CandlestickChart({
       wickDownColor: DANGER_COLOR,
     });
     seriesRef.current = series;
-
-    series.setData(
-      data.map((c) => ({
-        time: c.time as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      }))
-    );
-
-    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone, zone.id === highlightZoneId));
-    for (const primitive of zonePrimitives) {
-      series.attachPrimitive(primitive);
-    }
-
-    // Zoom to a range that starts a little before the earliest active zone
-    // (or the trade box being drawn, if that's further back — a resolved
-    // history record can predate every currently-active zone) instead of
-    // the full fetched history, so everything stays fully visible and
-    // readable without zooming out over everything we fetched.
-    const drawnStarts = zones.filter((z) => z.active).map((z) => z.startTime);
-    if (resolvedBox) drawnStarts.push(resolvedBox.startTime);
-    if (drawnStarts.length > 0 && data.length > 0) {
-      const earliestTime = Math.min(...drawnStarts);
-      const startIndex = data.findIndex((c) => c.time >= earliestTime);
-      const leftPadding = 3;
-      const fromIndex = Math.max(0, (startIndex === -1 ? 0 : startIndex) - leftPadding);
-      chart.timeScale().setVisibleRange({
-        from: data[fromIndex].time as UTCTimestamp,
-        to: data[data.length - 1].time as UTCTimestamp,
-      });
-    } else {
-      chart.timeScale().fitContent();
-    }
+    hasZoomedRef.current = false;
 
     function updatePriceY() {
-      if (data.length === 0) return;
-      setPriceY(series.priceToCoordinate(data[data.length - 1].close));
+      const latest = latestDataRef.current;
+      if (latest.length === 0) return;
+      setPriceY(series.priceToCoordinate(latest[latest.length - 1].close));
     }
     updatePriceY();
     // The price's Y position also moves on pan/zoom (price scale
@@ -282,12 +286,71 @@ export default function CandlestickChart({
     return () => {
       resizeObserver.disconnect();
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(updatePriceY);
-      for (const primitive of zonePrimitives) {
-        series.detachPrimitive(primitive);
-      }
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+    };
+  }, [instrumentKey]);
+
+  // Candle data + automated zone overlays, applied to the chart the effect
+  // above built — runs on every data refresh (including that 30s poll) as
+  // well as on instrument change, but only resets the visible zoom range
+  // the first time THIS instrument's chart receives real candles
+  // (hasZoomedRef), never on a later refresh.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    if (!chart || !series) return;
+
+    series.setData(
+      data.map((c) => ({
+        time: c.time as UTCTimestamp,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }))
+    );
+
+    const zonePrimitives = zones.map((zone) => new ZoneRectanglePrimitive(zone, zone.id === highlightZoneId));
+    for (const primitive of zonePrimitives) {
+      series.attachPrimitive(primitive);
+    }
+
+    if (!hasZoomedRef.current && data.length > 0) {
+      hasZoomedRef.current = true;
+      // Zoom to a range that starts a little before the earliest active
+      // zone (or the trade box being drawn, if that's further back — a
+      // resolved history record can predate every currently-active zone)
+      // instead of the full fetched history, so everything stays fully
+      // visible and readable without zooming out over everything fetched.
+      const drawnStarts = zones.filter((z) => z.active).map((z) => z.startTime);
+      if (resolvedBox) drawnStarts.push(resolvedBox.startTime);
+      if (drawnStarts.length > 0) {
+        const earliestTime = Math.min(...drawnStarts);
+        const startIndex = data.findIndex((c) => c.time >= earliestTime);
+        const leftPadding = 3;
+        const fromIndex = Math.max(0, (startIndex === -1 ? 0 : startIndex) - leftPadding);
+        chart.timeScale().setVisibleRange({
+          from: data[fromIndex].time as UTCTimestamp,
+          to: data[data.length - 1].time as UTCTimestamp,
+        });
+      } else {
+        chart.timeScale().fitContent();
+      }
+    }
+
+    chart.applyOptions({});
+
+    return () => {
+      // detachPrimitive (unlike removeSeries/priceScale().applyOptions() in
+      // the indicator effect below) is safe to call even after the chart
+      // itself has already been torn down by the creation effect above —
+      // confirmed directly against the real library — so this doesn't need
+      // that same chartRef.current-identity guard.
+      for (const primitive of zonePrimitives) {
+        series.detachPrimitive(primitive);
+      }
     };
   }, [data, zones, highlightZoneId, resolvedBox]);
 
