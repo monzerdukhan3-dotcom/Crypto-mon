@@ -18,23 +18,21 @@ export const metadata: Metadata = {
 };
 
 // Runs before hydration so the page paints in the right theme immediately —
-// a stored choice from the header toggle, or the system preference
-// otherwise — instead of flashing light and then switching to dark (or vice
-// versa) once React takes over. Keep the localStorage key in sync with
-// ThemeToggle.tsx.
+// a stored choice from the header toggle, or dark (the app's default)
+// otherwise — instead of flashing one theme and then switching once React
+// takes over. Keep the localStorage key in sync with ThemeToggle.tsx.
 const THEME_INIT_SCRIPT = `
 try {
   var stored = localStorage.getItem('crypto-mon:theme');
-  var theme = stored === 'light' || stored === 'dark'
-    ? stored
-    : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-theme', theme);
-} catch (e) {}
+  document.documentElement.setAttribute('data-theme', stored === 'light' ? 'light' : 'dark');
+} catch (e) {
+  document.documentElement.setAttribute('data-theme', 'dark');
+}
 `;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${tajawal.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="ar" dir="rtl" data-theme="dark" className={`${tajawal.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>

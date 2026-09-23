@@ -1,5 +1,11 @@
 import bcrypt from "bcryptjs";
-import { sql } from "./db";
+import { ensureSchema, sql } from "./db";
+
+/** The users table, created (and the ADMIN_EMAIL account seeded) on first use. */
+async function usersDb() {
+  await ensureSchema();
+  return sql();
+}
 
 export interface AppUser {
   id: number;
@@ -22,7 +28,7 @@ export interface AppUserSummary {
 const TRIAL_DAYS = 2;
 
 export async function findUserByEmail(email: string): Promise<AppUser | null> {
-  const db = sql();
+  const db = await usersDb();
   const rows = await db`
     select id, email, password_hash as "passwordHash", is_admin as "isAdmin", access_until as "accessUntil"
     from users where email = ${email.toLowerCase()} limit 1
@@ -43,7 +49,7 @@ export async function verifyPassword(email: string, password: string): Promise<A
  * isn't the trial funnel; see createTrialUser for that.
  */
 export async function createUser(email: string, password: string, isAdmin: boolean): Promise<AppUserSummary> {
-  const db = sql();
+  const db = await usersDb();
   const passwordHash = await bcrypt.hash(password, 12);
   const rows = await db`
     insert into users (email, password_hash, is_admin, access_until)
@@ -61,7 +67,7 @@ export async function createUser(email: string, password: string, isAdmin: boole
  * /admin (see extendUserAccess) once payment is confirmed.
  */
 export async function createTrialUser(email: string, password: string): Promise<AppUserSummary> {
-  const db = sql();
+  const db = await usersDb();
   const passwordHash = await bcrypt.hash(password, 12);
   const rows = await db`
     insert into users (email, password_hash, is_admin, access_until)
@@ -72,7 +78,7 @@ export async function createTrialUser(email: string, password: string): Promise<
 }
 
 export async function listUsers(): Promise<AppUserSummary[]> {
-  const db = sql();
+  const db = await usersDb();
   const rows = await db`
     select id, email, is_admin as "isAdmin", access_until as "accessUntil", created_at as "createdAt"
     from users order by created_at asc
@@ -81,13 +87,13 @@ export async function listUsers(): Promise<AppUserSummary[]> {
 }
 
 export async function countUsers(): Promise<number> {
-  const db = sql();
+  const db = await usersDb();
   const rows = await db`select count(*)::int as count from users`;
   return (rows[0] as { count: number }).count;
 }
 
 export async function deleteUser(id: number): Promise<void> {
-  const db = sql();
+  const db = await usersDb();
   await db`delete from users where id = ${id}`;
 }
 
@@ -97,7 +103,7 @@ export async function deleteUser(id: number): Promise<void> {
  * after confirming a Telegram payment.
  */
 export async function setUserAccessUntil(id: number, accessUntil: string | null): Promise<AppUserSummary> {
-  const db = sql();
+  const db = await usersDb();
   const rows = await db`
     update users set access_until = ${accessUntil} where id = ${id}
     returning id, email, is_admin as "isAdmin", access_until as "accessUntil", created_at as "createdAt"
@@ -113,7 +119,7 @@ export async function setUserAccessUntil(id: number, accessUntil: string | null)
  * from today.
  */
 export async function extendUserAccess(id: number, days: number): Promise<AppUserSummary> {
-  const db = sql();
+  const db = await usersDb();
   const rows = await db`
     update users
     set access_until = greatest(coalesce(access_until, now()), now()) + (${days} || ' days')::interval
