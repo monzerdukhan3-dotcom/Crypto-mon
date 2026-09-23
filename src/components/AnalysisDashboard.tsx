@@ -195,10 +195,14 @@ export default function AnalysisDashboard() {
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
       <div
-        className="animate-fade-in-up relative flex flex-col gap-4 overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row"
+        className="animate-fade-in-up relative flex flex-col gap-4 rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md sm:flex-row"
         style={{ animationDelay: "60ms" }}
       >
-        <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
+        {/* rounded-t-xl instead of the card's own overflow-hidden clipping
+            this to its rounded corners — overflow-hidden here would also
+            clip SymbolSearchSelect's dropdown, which is an absolutely
+            positioned child that needs to extend below this card. */}
+        <div className="absolute inset-x-0 top-0 h-0.5 rounded-t-xl bg-gradient-to-r from-info via-success to-info" />
         <label className="flex flex-1 flex-col gap-2 text-sm font-medium text-muted">
           العملة
           <SymbolSearchSelect symbols={availableSymbols} value={symbol} onChange={(s) => setSymbol(s as Symbol)} />
