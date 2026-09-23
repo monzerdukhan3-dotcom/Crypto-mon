@@ -185,8 +185,14 @@ export function buildTradePlan(
     const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
     if (entryIndex === -1) return false;
 
+    // Reject only a confirmed downtrend at entry — a demand-zone bounce
+    // fighting an actively falling market, unless the zone shares price
+    // with a daily zone (zone.htfOverlap), the one case worth taking even
+    // against the entry-timeframe trend. A sideways trend is let through
+    // now too: still a real bounce off a real level, just without a clear
+    // trend either way, which "!== up" used to reject alongside "down".
     const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
-    if (trendAtEntry !== "up" && !zone.htfOverlap) return false;
+    if (trendAtEntry === "down" && !zone.htfOverlap) return false;
 
     const plan = planFromZone(zone, zones, options);
     if (!plan) return false;
