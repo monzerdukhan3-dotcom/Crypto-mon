@@ -19,8 +19,11 @@ export function getTradePlanProgress(tradePlan: TradePlan, candles: Candle[]): {
 
   let highestTargetHit = 0;
   const entryTime = candles[entryIndex].time;
+  // Includes the entry candle itself — see evaluateTradeOutcome's own doc
+  // comment (tradeHistory.ts) for why: that same candle can already reach
+  // the stop loss before it even closes.
   for (const c of candles) {
-    if (c.time <= entryTime) continue;
+    if (c.time < entryTime) continue;
     if (c.low <= tradePlan.stopLoss) break;
     while (highestTargetHit < tradePlan.targets.length && c.high >= tradePlan.targets[highestTargetHit]) {
       highestTargetHit++;
@@ -70,17 +73,19 @@ export function findEntryIndex(candles: Candle[], fromTime: number, zoneTop: num
 }
 
 /**
- * False once price has, at any candle after `entryTime`, closed the trade
- * out — a low reaching the stop loss (checked first, same "worst case
- * first" convention tradeHistory.ts uses) or a high reaching every target
- * in turn. Mirrors evaluateTradeOutcome's own resolution loop, just
- * collapsed to the yes/no "is this still an open position" buildTradePlan
- * needs instead of a full resolved/stoppedOut/highestTargetHit record.
+ * False once price has, at or after `entryTime` (see evaluateTradeOutcome's
+ * own doc comment in tradeHistory.ts for why the entry candle itself is
+ * included), closed the trade out — a low reaching the stop loss (checked
+ * first, same "worst case first" convention tradeHistory.ts uses) or a
+ * high reaching every target in turn. Mirrors evaluateTradeOutcome's own
+ * resolution loop, just collapsed to the yes/no "is this still an open
+ * position" buildTradePlan needs instead of a full
+ * resolved/stoppedOut/highestTargetHit record.
  */
 function isEntryStillOpen(stopLoss: number, targets: number[], entryTime: number, candles: Candle[]): boolean {
   let highestTargetHit = 0;
   for (const c of candles) {
-    if (c.time <= entryTime) continue;
+    if (c.time < entryTime) continue;
     if (c.low <= stopLoss) return false;
     while (highestTargetHit < targets.length && c.high >= targets[highestTargetHit]) {
       highestTargetHit++;

@@ -31,14 +31,27 @@ export interface TradeRecord {
 
 /**
  * Re-evaluates a pending record against freshly fetched candles for its own
- * symbol+timeframe: walking forward from when it was logged, a candle whose
- * low reaches the stop loss resolves it as stopped out (checked before that
- * candle's targets — the conservative "worst case first" convention so a
- * single wide candle can't overstate the win rate); otherwise each target
- * reached in turn raises the highest-target-hit count. Only candles within
- * the currently fetched window are visible, so a record older than that
- * window simply keeps its last known state until re-checked with a wider
- * window.
+ * symbol+timeframe: walking forward from (and including) the candle it was
+ * logged on, a candle whose low reaches the stop loss resolves it as
+ * stopped out (checked before that candle's targets — the conservative
+ * "worst case first" convention so a single wide candle can't overstate
+ * the win rate); otherwise each target reached in turn raises the
+ * highest-target-hit count. Only candles within the currently fetched
+ * window are visible, so a record older than that window simply keeps its
+ * last known state until re-checked with a wider window.
+ *
+ * Includes the entry candle itself deliberately: findEntryIndex only
+ * requires that candle's *close* to be at or inside the zone, so a single
+ * volatile candle can wick from above the zone all the way through it
+ * and below the stop before closing back inside — entry (crossing
+ * zoneTop) and the stop-loss level are hit within the same candle, entry
+ * always first since price moves continuously and the stop sits further
+ * below the zone than the entry itself. Starting the walk one candle
+ * later missed this "instant stop-out" case entirely: with no later
+ * candle also reaching the stop, the record could sit pending
+ * indefinitely, or even resolve as a win off a later bounce — either way
+ * silently skipping a loss that genuinely happened. Confirmed live: about
+ * 1 in 6 real entries across a sample of major pairs has this shape.
  */
 export function evaluateTradeOutcome(record: TradeRecord, candles: Candle[]): TradeRecord {
   if (record.resolved) return record;
@@ -48,7 +61,7 @@ export function evaluateTradeOutcome(record: TradeRecord, candles: Candle[]): Tr
   let resolvedAt: number | null = null;
 
   for (const c of candles) {
-    if (c.time <= record.loggedAt) continue;
+    if (c.time < record.loggedAt) continue;
 
     if (c.low <= record.stopLoss) {
       stoppedOut = true;
