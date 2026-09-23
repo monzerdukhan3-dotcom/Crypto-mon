@@ -25,6 +25,13 @@ const ZONE_COLORS: Record<Zone["type"], { fill: string; band: string; border: st
   demand: { fill: "rgba(34, 197, 94, 0.30)", band: "rgba(34, 197, 94, 0.10)", border: "rgba(34, 197, 94, 0.75)" },
   supply: { fill: "rgba(240, 68, 68, 0.30)", band: "rgba(240, 68, 68, 0.10)", border: "rgba(240, 68, 68, 0.75)" },
 };
+// A broken zone (price has closed decisively through it) keeps its box on
+// the chart instead of just disappearing, but dimmed to neutral gray and
+// dashed — still visible as "this used to be a level", never mistaken for
+// a live, tradable one.
+const BROKEN_COLORS = { fill: "rgba(148, 163, 184, 0.14)", band: "rgba(148, 163, 184, 0.06)", border: "rgba(148, 163, 184, 0.6)" };
+const BROKEN_LABEL_PILL = "rgba(100, 116, 139, 0.92)";
+const BROKEN_LABEL_TEXT = "منطقة مكسورة";
 // Matches --color-info: the "price is approaching this one" callout, same
 // accent as the sidebar's alert so the two clearly refer to each other.
 const HIGHLIGHT_COLOR = "#3b82f6";
@@ -33,7 +40,8 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly coords: RectangleCoordinates,
     private readonly zoneType: Zone["type"],
-    private readonly highlighted: boolean
+    private readonly highlighted: boolean,
+    private readonly broken: boolean
   ) {}
 
   draw(target: CanvasRenderingTarget2D) {
@@ -46,7 +54,7 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
       const right = Math.max(x1, x2) * scope.horizontalPixelRatio;
       const top = Math.min(y1, y2) * scope.verticalPixelRatio;
       const bottom = Math.max(y1, y2) * scope.verticalPixelRatio;
-      const colors = ZONE_COLORS[this.zoneType];
+      const colors = this.broken ? BROKEN_COLORS : ZONE_COLORS[this.zoneType];
 
       // The true origin box is only the 1-6 base candles wide (ICT/SMC
       // style) — a handful of pixels once zoomed out, easy to miss
@@ -65,7 +73,12 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
       ctx.fillRect(left, top, right - left, bottom - top);
       ctx.strokeStyle = colors.border;
       ctx.lineWidth = 1.5;
+      // A solid box reads as "still valid" — a broken zone gets a dashed
+      // border instead, the same visual language as an unhit target line,
+      // so it's unmistakably a past reference and not a live level.
+      if (this.broken) ctx.setLineDash([5 * scope.horizontalPixelRatio, 4 * scope.horizontalPixelRatio]);
       ctx.strokeRect(left, top, right - left, bottom - top);
+      ctx.setLineDash([]);
 
       // Price is heading toward this specific zone but hasn't reached it
       // yet — an extra dashed outline around the whole visible band (not
@@ -78,7 +91,56 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
         ctx.strokeRect(left, top, scope.bitmapSize.width - left, bottom - top);
         ctx.restore();
       }
+
+      if (this.broken) this.drawBrokenLabel(ctx, scope, left, right, top);
     });
+  }
+
+  private drawBrokenLabel(
+    ctx: CanvasRenderingContext2D,
+    scope: { horizontalPixelRatio: number; verticalPixelRatio: number; bitmapSize: { width: number; height: number } },
+    left: number,
+    right: number,
+    top: number
+  ) {
+    // Skip the label once the origin box has scrolled entirely off-screen —
+    // pinning it to the pane edge like the price-scale countdown does would
+    // misattribute it to whatever's currently visible instead of this zone.
+    if (right < 0 || left > scope.bitmapSize.width) return;
+
+    const fontSize = 10.5 * scope.verticalPixelRatio;
+    ctx.font = `700 ${fontSize}px sans-serif`;
+    const textWidth = ctx.measureText(BROKEN_LABEL_TEXT).width;
+    const paddingX = 6 * scope.horizontalPixelRatio;
+    const paddingY = 4 * scope.verticalPixelRatio;
+    const pillWidth = textWidth + paddingX * 2;
+    const pillHeight = fontSize + paddingY * 1.4;
+
+    // Anchored just inside the box's own left edge (clamped on-screen while
+    // panned), a touch below its top border — out of the way of the price
+    // scale and any other overlapping label.
+    const pillX = Math.max(left, 0) + 4 * scope.horizontalPixelRatio;
+    const pillY = top + 4 * scope.verticalPixelRatio;
+    const radius = Math.min(4 * scope.horizontalPixelRatio, pillHeight / 2, pillWidth / 2);
+
+    ctx.fillStyle = BROKEN_LABEL_PILL;
+    ctx.beginPath();
+    ctx.moveTo(pillX + radius, pillY);
+    ctx.lineTo(pillX + pillWidth - radius, pillY);
+    ctx.arcTo(pillX + pillWidth, pillY, pillX + pillWidth, pillY + radius, radius);
+    ctx.lineTo(pillX + pillWidth, pillY + pillHeight - radius);
+    ctx.arcTo(pillX + pillWidth, pillY + pillHeight, pillX + pillWidth - radius, pillY + pillHeight, radius);
+    ctx.lineTo(pillX + radius, pillY + pillHeight);
+    ctx.arcTo(pillX, pillY + pillHeight, pillX, pillY + pillHeight - radius, radius);
+    ctx.lineTo(pillX, pillY + radius);
+    ctx.arcTo(pillX, pillY, pillX + radius, pillY, radius);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(BROKEN_LABEL_TEXT, pillX + pillWidth / 2, pillY + pillHeight / 2 + 0.5 * scope.verticalPixelRatio);
   }
 }
 
@@ -101,7 +163,12 @@ class ZoneRectanglePaneView implements IPrimitivePaneView {
   }
 
   renderer() {
-    return new ZoneRectanglePaneRenderer(this.coords, this.source.zone.type, this.source.highlighted);
+    return new ZoneRectanglePaneRenderer(
+      this.coords,
+      this.source.zone.type,
+      this.source.highlighted,
+      !this.source.zone.active
+    );
   }
 }
 

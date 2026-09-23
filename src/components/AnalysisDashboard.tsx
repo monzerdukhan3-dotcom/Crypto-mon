@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SUPPORTED_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
-import { buildTradePlan, findApproachingDemandZone } from "@/lib/tradePlan";
+import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
 import type { Candle, Zone } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
@@ -150,6 +150,14 @@ export default function AnalysisDashboard() {
     () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(searchableZones, currentPrice, candles) : null),
     [tradePlan, searchableZones, currentPrice, candles]
   );
+  // Purely explanatory: the zone nearest the current price that broke since
+  // it formed, so a box that was on the chart a moment ago doesn't just
+  // vanish with no trace of why once price closes through it. Never feeds
+  // into the trade plan itself — see findRecentlyBrokenZone's own doc comment.
+  const recentlyBrokenZone = useMemo(
+    () => (currentPrice !== null ? findRecentlyBrokenZone(searchableZones, currentPrice, candles) : null),
+    [searchableZones, currentPrice, candles]
+  );
   const confidence = useMemo(
     () => (tradePlan ? scoreTradeConfidence(tradePlan, searchableZones, candles, dailyCandles) : null),
     [tradePlan, searchableZones, candles, dailyCandles]
@@ -164,12 +172,12 @@ export default function AnalysisDashboard() {
   // cap — otherwise the sidebar could show an active "خطة الصفقة" or
   // "تقترب من منطقة طلب" note for a zone the chart never actually outlines.
   const displayZones = useMemo(() => {
-    const extra = [tradePlan?.zone, approachingZone].filter(
+    const extra = [tradePlan?.zone, approachingZone, recentlyBrokenZone].filter(
       (z): z is Zone => z !== null && z !== undefined && !zones.some((existing) => existing.id === z.id)
     );
     if (extra.length === 0) return zones;
     return [...zones, ...extra].sort((a, b) => a.startTime - b.startTime);
-  }, [zones, tradePlan, approachingZone]);
+  }, [zones, tradePlan, approachingZone, recentlyBrokenZone]);
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
   const tradeProgress = useMemo(
     () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice) : null),
