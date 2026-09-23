@@ -18,7 +18,13 @@ export function sql() {
 /**
  * Idempotent — safe to call on every cold start, not just once at setup.
  * is_admin distinguishes the owner/admin tier (full access, including
- * /admin) from regular visitor accounts (the main pages only).
+ * /admin) from regular visitor accounts (the main pages only). access_until
+ * gates a regular account's access to the app itself: null means unlimited
+ * (an admin-created or manually-comped account), a timestamp in the past
+ * means access has lapsed (trial or subscription) — see proxy.ts. Billing
+ * is manual (Telegram) rather than automated, so this column is the one
+ * source of truth an admin edits directly from /admin after confirming a
+ * payment, rather than something a payment webhook writes.
  */
 export async function ensureUsersTable(): Promise<void> {
   const db = sql();
@@ -28,7 +34,9 @@ export async function ensureUsersTable(): Promise<void> {
       email text unique not null,
       password_hash text not null,
       is_admin boolean not null default false,
+      access_until timestamptz,
       created_at timestamptz not null default now()
     )
   `;
+  await db`alter table users add column if not exists access_until timestamptz`;
 }

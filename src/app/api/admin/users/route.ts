@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { createUser, deleteUser, findUserByEmail, listUsers } from "@/lib/users";
+import { createUser, deleteUser, extendUserAccess, findUserByEmail, listUsers, setUserAccessUntil } from "@/lib/users";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -39,6 +39,38 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await createUser(email, password, isAdmin);
+  return NextResponse.json({ user });
+}
+
+// Manages a user's subscription access after the owner confirms a payment
+// over Telegram (billing is manual — there's no Stripe/webhook writing this).
+// { unlimited: true } grants permanent access; { revoke: true } cuts access
+// off immediately; { days: N } extends by N days from whichever is later,
+// now or their current access_until (see extendUserAccess).
+export async function PATCH(request: NextRequest) {
+  if (!(await requireAdmin())) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
+
+  const body = await request.json().catch(() => null);
+  const id = Number(body?.id);
+  if (!Number.isInteger(id)) {
+    return NextResponse.json({ error: "معرّف غير صالح" }, { status: 400 });
+  }
+
+  if (body?.unlimited === true) {
+    const user = await setUserAccessUntil(id, null);
+    return NextResponse.json({ user });
+  }
+
+  if (body?.revoke === true) {
+    const user = await setUserAccessUntil(id, new Date().toISOString());
+    return NextResponse.json({ user });
+  }
+
+  const days = Number(body?.days);
+  if (!Number.isFinite(days) || days <= 0) {
+    return NextResponse.json({ error: "قيمة أيام غير صالحة" }, { status: 400 });
+  }
+  const user = await extendUserAccess(id, days);
   return NextResponse.json({ user });
 }
 

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import LoginForm from "@/components/LoginForm";
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
@@ -18,6 +19,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </div>
 
         <LoginForm callbackUrl={callbackUrl} />
+
+        <p className="text-center text-xs text-muted">
+          ليس لديك حساب؟{" "}
+          <Link href="/signup" className="font-medium text-success hover:underline">
+            جرّبه مجانًا لمدة يومين
+          </Link>
+        </p>
       </div>
     </div>
   );

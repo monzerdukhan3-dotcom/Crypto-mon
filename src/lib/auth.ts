@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { verifyPassword } from "./users";
+import { findUserByEmail, verifyPassword } from "./users";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   session: { strategy: "jwt" },
@@ -20,18 +20,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const user = await verifyPassword(email, password);
         if (!user) return null;
 
-        return { id: String(user.id), email: user.email, isAdmin: user.isAdmin };
+        return { id: String(user.id), email: user.email, isAdmin: user.isAdmin, accessUntil: user.accessUntil };
       },
     }),
   ],
   callbacks: {
-    // Credentials' authorize() only ever returns { id, email, isAdmin } —
-    // carried into the JWT once at sign-in and echoed back onto the session
-    // on every request, without a DB round-trip per request.
+    // Re-reads isAdmin/accessUntil from the DB on every call (not just the
+    // initial sign-in) — cheap (one indexed lookup) and means an admin
+    // extending someone's access from /admin after a Telegram payment takes
+    // effect on that visitor's very next request, not only after they log
+    // out and back in.
     async jwt({ token, user }) {
-      if (user) {
-        token.email = user.email;
-        token.isAdmin = Boolean((user as { isAdmin?: boolean }).isAdmin);
+      const email = user?.email ?? (token.email as string | undefined);
+      if (!email) return token;
+
+      const dbUser = await findUserByEmail(email);
+      if (dbUser) {
+        token.email = dbUser.email;
+        token.isAdmin = dbUser.isAdmin;
+        token.accessUntil = dbUser.accessUntil;
       }
       return token;
     },
@@ -39,6 +46,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user) {
         session.user.email = token.email as string;
         session.user.isAdmin = Boolean(token.isAdmin);
+        session.user.accessUntil = (token.accessUntil as string | null | undefined) ?? null;
       }
       return session;
     },
