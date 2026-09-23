@@ -5,6 +5,7 @@ import { signOut, useSession } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import MoreMenu from "./MoreMenu";
 import ThemeToggle from "./ThemeToggle";
 
 const NAV_ITEMS = [
@@ -53,6 +54,7 @@ export default function Header() {
               </Link>
             );
           })}
+          <MoreMenu />
           <ThemeToggle />
           {session && (
             <button

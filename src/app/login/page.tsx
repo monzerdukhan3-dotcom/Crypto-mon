@@ -26,6 +26,20 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             جرّبه مجانًا لمدة يومين
           </Link>
         </p>
+
+        <p className="text-center text-xs text-muted">
+          <Link href="/pricing" className="hover:text-success hover:underline">
+            الأسعار
+          </Link>{" "}
+          ·{" "}
+          <Link href="/track-record" className="hover:text-success hover:underline">
+            سجل الأداء
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacy" className="hover:text-success hover:underline">
+            سياسة الخصوصية
+          </Link>
+        </p>
       </div>
     </div>
   );
