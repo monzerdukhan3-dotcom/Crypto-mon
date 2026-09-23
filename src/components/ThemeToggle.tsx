@@ -7,34 +7,18 @@ type Theme = "light" | "dark";
 
 const STORAGE_KEY = "crypto-mon:theme";
 
-function systemTheme(): Theme {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
 export default function ThemeToggle() {
   // Matches whatever the blocking script in layout.tsx already set on
-  // <html> before this component ever mounts, so there's no mismatch to
-  // reconcile — just read it straight from the DOM.
+  // <html> before this component ever mounts (dark unless the person picked
+  // light), so there's no mismatch to reconcile — just read it from the DOM.
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
     // Deferred a tick so this reconciliation-from-the-DOM doesn't run
     // synchronously inside the effect body itself.
     queueMicrotask(() => {
-      setTheme((document.documentElement.getAttribute("data-theme") as Theme | null) ?? systemTheme());
+      setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
     });
-
-    // Keep following the system preference live for as long as the person
-    // hasn't made an explicit choice of their own.
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    function handleSystemChange() {
-      if (localStorage.getItem(STORAGE_KEY)) return;
-      const next = systemTheme();
-      document.documentElement.setAttribute("data-theme", next);
-      setTheme(next);
-    }
-    media.addEventListener("change", handleSystemChange);
-    return () => media.removeEventListener("change", handleSystemChange);
   }, []);
 
   function toggle() {

@@ -50,7 +50,7 @@ export default function MoreMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-1.5 w-44 overflow-hidden rounded-lg border border-surface-border bg-surface py-1 shadow-lg">
+        <div className="absolute end-0 top-full z-20 mt-1.5 w-44 overflow-hidden rounded-lg border border-surface-border bg-surface py-1 shadow-lg">
           {MENU_ITEMS.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}

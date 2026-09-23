@@ -714,7 +714,10 @@ export default function CandlestickChart({
   }
 
   return (
+    // The chart and its overlay toolbars are laid out left-to-right like
+    // any trading chart, independent of the page's RTL direction.
     <div
+      dir="ltr"
       className={
         isFullscreen ? "fixed inset-0 z-50 bg-background p-2" : "relative h-full w-full"
       }

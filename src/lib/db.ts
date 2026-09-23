@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { neon } from "@neondatabase/serverless";
 
 /**
@@ -39,4 +40,44 @@ export async function ensureUsersTable(): Promise<void> {
     )
   `;
   await db`alter table users add column if not exists access_until timestamptz`;
+}
+
+/**
+ * If ADMIN_EMAIL and ADMIN_PASSWORD are set, makes sure that account exists
+ * as an admin — the way the very first owner account gets created on a
+ * fresh database, since /signup only ever creates trial accounts and /admin
+ * needs an admin to reach it. Never touches an existing account's password.
+ */
+async function ensureBootstrapAdmin(): Promise<void> {
+  const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) return;
+
+  const db = sql();
+  const passwordHash = await bcrypt.hash(password, 12);
+  await db`
+    insert into users (email, password_hash, is_admin, access_until)
+    values (${email}, ${passwordHash}, true, null)
+    on conflict (email) do update set is_admin = true, access_until = null
+  `;
+}
+
+let schemaReady: Promise<void> | null = null;
+
+/**
+ * Runs the schema setup (and admin bootstrap) once per server instance, the
+ * first time anything touches the users table — so a fresh Neon database
+ * works with no manual migration step. A failed attempt is forgotten so the
+ * next request retries instead of caching the error.
+ */
+export function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = ensureUsersTable()
+      .then(ensureBootstrapAdmin)
+      .catch((error) => {
+        schemaReady = null;
+        throw error;
+      });
+  }
+  return schemaReady;
 }

@@ -2,10 +2,10 @@ import { Check, MessageCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 
-// TODO: replace with the real Telegram contact before this goes live —
-// billing is manual (no Stripe): the visitor messages this account, the
-// owner confirms payment, then extends their access from /admin.
-const TELEGRAM_CONTACT_URL = "https://t.me/REPLACE_WITH_YOUR_TELEGRAM_USERNAME";
+// Billing is manual (no Stripe): the visitor messages this Telegram
+// account, the owner confirms payment, then extends their access from
+// /admin. Set TELEGRAM_CONTACT_URL (e.g. https://t.me/your_username).
+const TELEGRAM_CONTACT_URL = process.env.TELEGRAM_CONTACT_URL || "https://t.me/REPLACE_WITH_YOUR_TELEGRAM_USERNAME";
 
 const FEATURES = [
   "شارت حي مع تحليل مناطق العرض والطلب تلقائيًا",

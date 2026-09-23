@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Crypto-mon
 
-## Getting Started
+أداة تحليل فني للعملات الرقمية باللغة العربية: شارت حي مع مناطق العرض والطلب، خطة صفقة لكل منطقة، مسح آلي للفرص، وسجل أداء مبني على Backtest حقيقي من شموع Binance.
 
-First, run the development server:
+## التقنيات
+
+- Next.js 16 (App Router + Turbopack) · React 19 · TypeScript
+- Tailwind CSS v4 (وضع داكن افتراضي، واجهة RTL، خط Tajawal)
+- lightweight-charts v5 (TradingView)
+- NextAuth v5 (JWT) + Neon Postgres (`@neondatabase/serverless`) + bcryptjs
+- lucide-react
+
+## الصفحات
+
+| المسار | الوصف | الوصول |
+| --- | --- | --- |
+| `/` | الشارت التفاعلي (EMA، RSI، MACD، الفوليوم، صناديق المناطق، أدوات رسم) + الشريط الجانبي: خطة الصفقة، درجة القوة، التحليل الأساسي من CoinGecko (كاش 30 دقيقة) | مشترك |
+| `/opportunities` | مسح 76 عملة × 4 فريمات، مقسّم إلى «عند نقطة الدخول» و«تقترب من منطقة الدخول» | مشترك |
+| `/history` | سجل الصفقات (Backtest على شموع Binance) مع نسبة النجاح والعائد | مشترك |
+| `/track-record` | سجل الأداء العلني | عام |
+| `/login`, `/signup` | تسجيل الدخول وإنشاء حساب (تجربة مجانية يومان) | عام |
+| `/pricing` | الخطط + زر تلغرام للدفع اليدوي | عام |
+| `/admin` | إدارة المستخدمين وتمديد الاشتراكات والملاحظات الأساسية | المالك فقط |
+| `/terms`, `/privacy` | الشروط وسياسة الخصوصية | عام |
+
+الحماية في `src/proxy.ts` (في Next.js 16 تمت إعادة تسمية `middleware.ts` إلى `proxy.ts`): أي زائر غير مسجّل يُحوَّل إلى `/login`، وغير المالك يُمنع من `/admin`، والحساب الذي انتهى `access_until` الخاص به يُحوَّل إلى `/pricing`. دالة `jwt` في `src/lib/auth.ts` تقرأ `is_admin` و`access_until` من قاعدة البيانات في كل طلب، فتمديد الاشتراك من `/admin` يسري فورًا.
+
+## التشغيل
 
 ```bash
+cp .env.example .env.local   # ثم املأ القيم
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+المتغيرات:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `DATABASE_URL`: رابط Neon Postgres. جدول `users` يُنشأ تلقائيًا عند أول استخدام (أو يدويًا من `schema.sql`).
+- `AUTH_SECRET`: سر NextAuth (`npx auth secret`).
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD`: حساب المالك الأول، يُنشأ تلقائيًا كمدير.
+- `TELEGRAM_CONTACT_URL`: رابط تلغرام لزر الدفع في `/pricing`.
+- `COINGECKO_API_KEY` (اختياري): مفتاح Demo مجاني لرفع حد الطلبات.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## البنية
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  proxy.ts               حماية المسارات والصلاحيات
+  auth.ts, lib/auth.ts   إعداد NextAuth v5 (Credentials + JWT)
+  lib/db.ts, lib/users.ts  Neon Postgres وجدول المستخدمين
+  lib/marketData.ts      شموع Binance (data-api.binance.vision)
+  lib/zones.ts           محرك مناطق العرض والطلب
+  lib/tradePlan.ts       خطة الصفقة (دخول، وقف، أهداف)
+  lib/tradeBacktest.ts   محاكاة الصفقات على الشموع
+  lib/indicators.ts      EMA / RSI / MACD
+  lib/fundamentalData.ts CoinGecko (كاش 30 دقيقة)
+  components/            الشارت، الشريط الجانبي، الفرص، السجل، لوحة الإدارة
+  app/                   الصفحات ومسارات الـ API
+```
