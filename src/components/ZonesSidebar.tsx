@@ -9,16 +9,22 @@ import {
   Crosshair,
   ExternalLink,
   Gauge,
+  Globe,
+  Hash,
   Layers,
   LineChart,
+  Loader2,
   Newspaper,
   Shield,
   Target,
+  ThumbsDown,
+  ThumbsUp,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatPrice } from "@/lib/format";
 import { getFundamentalNote } from "@/lib/fundamentalNotes";
+import type { FundamentalData } from "@/lib/fundamentalData";
 import type { TradeConfidence } from "@/lib/tradeConfidence";
 import type { TradeProgress } from "@/lib/tradeProgress";
 import type { TradePlan, Zone, ZoneStrength } from "@/lib/types";
@@ -43,8 +49,7 @@ const STRENGTH_CLASSES: Record<ZoneStrength, string> = {
   weak: "bg-surface-border text-muted",
 };
 
-const FUNDAMENTAL_PLACEHOLDER =
-  "لا توجد ملاحظة تحليل أساسي محفوظة لهذه العملة بعد. الأخبار الحية تحتاج مصدر خارجي (مثل CryptoPanic أو NewsAPI) غير متوفر حاليًا في المشروع — يمكنك كتابة ملاحظة يدوية من صفحة الإعدادات.";
+const FUNDAMENTAL_UNAVAILABLE = "تعذّر جلب بيانات التحليل الأساسي لهذه العملة حاليًا. حاول مرة أخرى بعد قليل.";
 
 const TRADE_PROGRESS_STATUS_LABEL: Record<TradeProgress["status"], string> = {
   profit: "في الربح",
@@ -150,6 +155,34 @@ export default function ZonesSidebar({
   // fetch resolves), so reading localStorage directly at render time here
   // carries no SSR-hydration-mismatch risk.
   const note = useMemo(() => getFundamentalNote(symbol), [symbol]);
+
+  // Live fundamental profile (project description, market cap rank,
+  // community sentiment) from /api/fundamentals — auto-refetches whenever
+  // the symbol changes, no manual action needed. The admin-written `note`
+  // above is a separate, optional supplement shown alongside it, not a
+  // replacement for it.
+  const [fundamentalResult, setFundamentalResult] = useState<{ symbol: string; data: FundamentalData | null } | null>(
+    null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/fundamentals?symbol=${symbol}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("fetch failed"))))
+      .then((data: FundamentalData) => {
+        if (!cancelled) setFundamentalResult({ symbol, data });
+      })
+      .catch(() => {
+        if (!cancelled) setFundamentalResult({ symbol, data: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
+  const fundamentalStatus: "loading" | "ready" | "error" =
+    fundamentalResult?.symbol !== symbol ? "loading" : fundamentalResult.data ? "ready" : "error";
+  const fundamental = fundamentalStatus === "ready" ? fundamentalResult!.data : null;
 
   const activeZones = zones
     .filter((z) => z.active)
@@ -264,14 +297,79 @@ export default function ZonesSidebar({
       </Card>
 
       <Card icon={Newspaper} title="التحليل الأساسي">
-        <p className="text-sm leading-relaxed text-foreground">{note?.text || FUNDAMENTAL_PLACEHOLDER}</p>
-        <div className="mt-3 flex items-center justify-between text-xs text-muted">
-          <span>{note ? `آخر تحديث: ${formatDate(note.updatedAt)}` : ""}</span>
-          <Link href="/admin" className="flex items-center gap-1 text-success hover:underline">
-            تحرير
-            <ExternalLink className="h-3 w-3" strokeWidth={2.25} />
-          </Link>
-        </div>
+        {fundamentalStatus === "loading" ? (
+          <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted">
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
+            جاري التحميل...
+          </div>
+        ) : fundamental ? (
+          <div className="flex flex-col gap-3">
+            {fundamental.marketCapRank !== null && (
+              <Row icon={Hash} label="الترتيب بالقيمة السوقية" value={`#${fundamental.marketCapRank}`} />
+            )}
+            {fundamental.sentimentUpPct !== null && fundamental.sentimentDownPct !== null && (
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+                  <span className="flex items-center gap-1 text-success">
+                    <ThumbsUp className="h-3 w-3" strokeWidth={2.25} />
+                    {fundamental.sentimentUpPct.toFixed(0)}%
+                  </span>
+                  <span>رأي المجتمع</span>
+                  <span className="flex items-center gap-1 text-danger">
+                    {fundamental.sentimentDownPct.toFixed(0)}%
+                    <ThumbsDown className="h-3 w-3" strokeWidth={2.25} />
+                  </span>
+                </div>
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-surface-border">
+                  <div className="h-full bg-success" style={{ width: `${fundamental.sentimentUpPct}%` }} />
+                  <div className="h-full bg-danger" style={{ width: `${fundamental.sentimentDownPct}%` }} />
+                </div>
+              </div>
+            )}
+            {fundamental.description && (
+              <p className="text-sm leading-relaxed text-foreground" dir="ltr">
+                {fundamental.description}
+              </p>
+            )}
+            <div className="flex items-center justify-between text-xs text-muted">
+              <span>المصدر: CoinGecko · يُحدَّث تلقائيًا</span>
+              {fundamental.homepage && (
+                <a
+                  href={fundamental.homepage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-success hover:underline"
+                >
+                  <Globe className="h-3 w-3" strokeWidth={2.25} />
+                  الموقع الرسمي
+                </a>
+              )}
+            </div>
+          </div>
+        ) : (
+          <EmptyState icon={Newspaper}>{FUNDAMENTAL_UNAVAILABLE}</EmptyState>
+        )}
+
+        {note ? (
+          <div className="mt-4 flex flex-col gap-1.5 border-t border-surface-border pt-3">
+            <p className="text-xs font-semibold text-muted">ملاحظة إضافية من المدير</p>
+            <p className="text-sm leading-relaxed text-foreground">{note.text}</p>
+            <div className="mt-1 flex items-center justify-between text-xs text-muted">
+              <span>آخر تحديث: {formatDate(note.updatedAt)}</span>
+              <Link href="/admin" className="flex items-center gap-1 text-success hover:underline">
+                تحرير
+                <ExternalLink className="h-3 w-3" strokeWidth={2.25} />
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 border-t border-surface-border pt-3 text-xs text-muted">
+            <Link href="/admin" className="flex items-center gap-1 text-success hover:underline">
+              أضف ملاحظة يدوية
+              <ExternalLink className="h-3 w-3" strokeWidth={2.25} />
+            </Link>
+          </div>
+        )}
       </Card>
 
       <Card icon={Layers} title={`المناطق النشطة (${activeZones.length})`}>

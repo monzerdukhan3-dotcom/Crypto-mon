@@ -12,7 +12,8 @@ export default function AdminPage() {
           </span>
           <h1 className="text-2xl font-bold text-foreground">إدارة التحليل الأساسي</h1>
           <p className="max-w-md text-center text-sm text-muted">
-            حرّر يدويًا نص التحليل الأساسي المعروض لكل عملة في لوحة التحليل
+            لوحة التحليل تعرض تلقائيًا ملفًا حيًا لكل عملة (المصدر: CoinGecko) — هنا يمكنك إضافة ملاحظة يدوية إضافية
+            تظهر بجانبه، مثل سياق لا يغطيه المصدر الخارجي
           </p>
         </div>
 

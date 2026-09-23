@@ -12,9 +12,10 @@ function isBrowser(): boolean {
 }
 
 /**
- * Manually-written fundamental-analysis notes, one per symbol. There is no
- * live news API connected yet, so this is an admin-editable substitute
- * rather than anything auto-generated — see /admin. Browser-local
+ * Manually-written fundamental-analysis notes, one per symbol — an optional
+ * supplement an admin can add on top of the live CoinGecko-sourced profile
+ * (see fundamentalData.ts / ZonesSidebar), for context CoinGecko's own
+ * description doesn't cover. Edited from /admin. Browser-local
  * (localStorage) for now: edits made here are only visible in the same
  * browser that made them, not broadcast to other visitors.
  */
