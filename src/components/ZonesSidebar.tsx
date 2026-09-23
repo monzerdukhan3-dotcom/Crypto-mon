@@ -42,6 +42,17 @@ interface ZonesSidebarProps {
    * for the full reasoning. Only meaningful alongside approachingZone.
    */
   approachingTrendReady: boolean;
+  /**
+   * The nearest broken zone to the current price (see
+   * findRecentlyBrokenZone's own doc comment) — surfaced here specifically
+   * so a demand zone this card once told a subscriber to place a pending
+   * buy order at doesn't just silently get replaced by a different
+   * suggestion the next time price moves. When set (and it's a demand
+   * zone — only those ever get a "علّق أمر شراء" note), an explicit
+   * "that order is now stale, cancel it" alert renders above whatever
+   * this card is currently recommending, so the two are never conflated.
+   */
+  recentlyBrokenZone: Zone | null;
   tradeProgress: TradeProgress | null;
   confidence: TradeConfidence | null;
   technicalSummary: string;
@@ -122,12 +133,18 @@ function Note({
   icon: Icon,
   children,
 }: {
-  tone: "warning" | "success" | "info";
+  tone: "warning" | "success" | "info" | "danger";
   icon: typeof AlertTriangle;
   children: ReactNode;
 }) {
   const classes =
-    tone === "warning" ? "bg-warning-soft text-warning" : tone === "info" ? "bg-info-soft text-info" : "bg-success-soft text-success";
+    tone === "warning"
+      ? "bg-warning-soft text-warning"
+      : tone === "info"
+        ? "bg-info-soft text-info"
+        : tone === "danger"
+          ? "bg-danger-soft text-danger"
+          : "bg-success-soft text-success";
   return (
     <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs font-medium ${classes}`}>
       <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
@@ -152,6 +169,7 @@ export default function ZonesSidebar({
   tradePlan,
   approachingZone,
   approachingTrendReady,
+  recentlyBrokenZone,
   tradeProgress,
   confidence,
   technicalSummary,
@@ -200,6 +218,13 @@ export default function ZonesSidebar({
     <aside className="flex w-full flex-col gap-5 lg:w-80">
       <Card icon={Target} title="خطة الصفقة">
         <div className="flex flex-col gap-3">
+          {recentlyBrokenZone && recentlyBrokenZone.type === "demand" && (
+            <Note tone="danger" icon={AlertTriangle}>
+              منطقة الشراء التي كنا ننصح بتعليق أمر شراء عندها (
+              {formatPrice(recentlyBrokenZone.bottom)}–{formatPrice(recentlyBrokenZone.top)}) انكسرت. إن كان لديك
+              أمر معلّق هناك، أوصي بإلغائه فورًا — لم تعد المنطقة صالحة.
+            </Note>
+          )}
           {volatility?.isHigh && (
             <Note tone="warning" icon={AlertTriangle}>
               تقلب مرتفع حاليًا — الحركة أعلى من المعتاد لهذه العملة بنسبة{" "}

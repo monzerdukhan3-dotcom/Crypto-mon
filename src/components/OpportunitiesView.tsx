@@ -10,7 +10,7 @@ import type { OpportunityResult } from "@/app/api/opportunities/route";
 
 // Bumped only if OpportunityResult's shape changes — an old cached entry
 // from a previous version would otherwise render with missing fields.
-const CACHE_KEY = "crypto-mon:opportunities-cache:v1";
+const CACHE_KEY = "crypto-mon:opportunities-cache:v2";
 
 // Fetched in small batches rather than all 304 (76 coins × 4 timeframes) at
 // once — each request is still independently cached server-side for a
@@ -48,6 +48,10 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
   // trade to open the moment price gets there unless the trend turns
   // first. Not shown for "entry" (already open) or when the trend is fine.
   const trendWarning = !isEntry && item.approachingTrendReady === false;
+  // See OpportunityResult.recentlyBrokenZone's own doc comment — shown
+  // whenever it's set, before the current zone/trend info, so it never
+  // reads as part of the current suggestion.
+  const brokenZone = item.recentlyBrokenZone;
   return (
     <li className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -71,6 +75,12 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
           </Link>
         </div>
       </div>
+      {brokenZone && (
+        <p className="mt-2 rounded-lg bg-danger-soft px-2.5 py-1.5 text-xs text-danger">
+          ⚠️ منطقة شراء عند {formatPrice(brokenZone.bottom)}–{formatPrice(brokenZone.top)} انكسرت — إن علّقت أمر
+          شراء هناك فألغِه فورًا، لم تعد صالحة
+        </p>
+      )}
       {trendWarning && (
         <p className="mt-2 rounded-lg bg-warning-soft px-2.5 py-1.5 text-xs text-warning">
           ⚠️ الاتجاه العام هابط حالياً — لن تُفتح صفقة عند وصول السعر لهذه المنطقة ما لم يتحول الاتجاه أولاً
