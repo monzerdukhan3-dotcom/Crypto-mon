@@ -63,8 +63,12 @@ class ZoneRectanglePaneRenderer implements IPrimitivePaneRenderer {
       // the visible edge, panned/zoomed or not) keeps the level
       // unmistakably visible, while the origin box itself still gets a
       // visibly stronger fill and border so the precise Order Block is
-      // still there to read.
-      if (scope.bitmapSize.width > right) {
+      // still there to read. A broken zone skips this entirely: the
+      // caller has already set its right edge (x2) to the breaking
+      // candle itself (see findRecentlyBrokenZone's display copy), so the
+      // rectangle simply ends there instead of trailing on as if the
+      // level were still live.
+      if (!this.broken && scope.bitmapSize.width > right) {
         ctx.fillStyle = colors.band;
         ctx.fillRect(right, top, scope.bitmapSize.width - right, bottom - top);
       }
