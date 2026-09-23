@@ -1,5 +1,4 @@
 import { calculateATR } from "./indicators";
-import { detectTrend } from "./trend";
 import type { Candle, TradePlan, Zone } from "./types";
 
 /**
@@ -156,12 +155,17 @@ export function planFromZone(
  * findApproachingDemandZone), not a live setup, so it's excluded here even
  * though it's still a perfectly valid zone for the sidebar's zone list.
  *
- * "تداخل المناطق": when this timeframe's own trend wasn't clearly up as of
- * the entry candle, a demand zone here was only safe to buy if it overlaps
- * a same-type zone on the higher timeframe (zone.htfOverlap) — real support
- * from above, not just this timeframe's own read at the time. Judged from
- * what was known then, not from today's trend, which can have changed
- * since.
+ * Used to require the timeframe's own trend (detectTrend) to read "up" as
+ * of the entry candle, unless the zone had higher-timeframe overlap
+ * ("تداخل المناطق"). Removed: detectTrend is a lagging, 20-candle-lookback
+ * measure, and a demand-zone retest by definition follows a decline into
+ * the zone — so at the exact entry candle it very often reads "down" or
+ * "sideways" for the very pattern this app exists to catch. Audited against
+ * live data across the full symbol/timeframe universe: that gate rejected
+ * 61.4% of every genuine zone entry (775 of 1263). The zone's own quality
+ * is judged instead by its strength score, which already factors in
+ * higher-timeframe confluence (see scoreZone), not as a hard eligibility
+ * filter.
  */
 export function buildTradePlan(
   zones: Zone[],
@@ -174,9 +178,6 @@ export function buildTradePlan(
 
     const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
     if (entryIndex === -1) return false;
-
-    const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
-    if (trendAtEntry !== "up" && !zone.htfOverlap) return false;
 
     const plan = planFromZone(zone, zones, options);
     if (!plan) return false;

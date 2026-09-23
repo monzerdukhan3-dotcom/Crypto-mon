@@ -2,7 +2,6 @@ import type { Timeframe } from "./constants";
 import { findEntryIndex, planFromZone } from "./tradePlan";
 import { evaluateTradeOutcome, type TradeRecord } from "./tradeHistory";
 import { scoreTradeConfidence } from "./tradeConfidence";
-import { detectTrend } from "./trend";
 import type { Candle } from "./types";
 import { detectZoneHistory } from "./zones";
 
@@ -67,12 +66,6 @@ export function backtestTradeHistory(
 
     const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
     if (entryIndex === -1) continue; // price never actually left, then came back, to this zone
-
-    // تداخل المناطق: same eligibility gate buildTradePlan applies live —
-    // a broken/non-up trend at entry time needed higher-timeframe overlap
-    // to be a real buy, judged only from what was known as of that candle.
-    const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
-    if (trendAtEntry !== "up" && !zone.htfOverlap) continue;
 
     const plan = planFromZone(zone, zones);
     if (!plan) continue;
