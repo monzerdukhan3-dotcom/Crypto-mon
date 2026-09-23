@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TIMEFRAMES, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
+import { readSessionCache, writeSessionCache } from "@/lib/sessionCache";
 import type { TradeRecord } from "@/lib/tradeHistory";
 import type { Candle } from "@/lib/types";
 import type { SymbolInfo } from "@/lib/constants";
@@ -197,9 +198,17 @@ async function fetchCandles(symbol: string, timeframe: Timeframe): Promise<Candl
   return json.candles as Candle[];
 }
 
+// Bumped only if TradeRecord's shape changes — an old cached entry from a
+// previous version would otherwise render with missing fields.
+const CACHE_KEY = "crypto-mon:history-cache:v1";
+
 export default function TradeHistoryView() {
   const searchParams = useSearchParams();
-  const [records, setRecords] = useState<TradeRecord[] | null>(null);
+  // Seeded from last visit's cached scan (if any) so this page paints the
+  // previous result immediately instead of a loading spinner on every
+  // open — see readSessionCache's own doc comment. The effect below still
+  // runs a fresh scan regardless and replaces this the moment it finishes.
+  const [records, setRecords] = useState<TradeRecord[] | null>(() => readSessionCache<TradeRecord[]>(CACHE_KEY));
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [reloadKey, setReloadKey] = useState(0);
   const [symbolFilter, setSymbolFilter] = useState(() => searchParams.get("symbol")?.toUpperCase() ?? "");
@@ -235,7 +244,10 @@ export default function TradeHistoryView() {
         setProgress({ done: Math.min(i + BATCH_SIZE, pairs.length), total: pairs.length });
       }
 
-      if (!cancelled) setRecords(collected);
+      if (!cancelled) {
+        setRecords(collected);
+        writeSessionCache(CACHE_KEY, collected);
+      }
     }
 
     run();
