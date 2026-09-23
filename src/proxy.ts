@@ -43,9 +43,12 @@ export default auth((req) => {
 
 export const config = {
   // Everything except NextAuth's own API routes, the fully-public pages
-  // (login/signup/pricing/track-record/legal) and their own APIs, and
-  // static assets — those all need to stay reachable with no session.
+  // (login/signup/pricing/track-record/legal) and their own APIs, static
+  // assets, and the PWA install files (manifest.webmanifest, sw.js, and
+  // the icons the manifest points at — a visitor's browser needs these to
+  // offer "install app" from the public pages too, before they've ever
+  // logged in) — those all need to stay reachable with no session.
   matcher: [
-    "/((?!api/auth|api/register|api/track-record|login|signup|pricing|track-record|terms|privacy|_next/static|_next/image|favicon.ico|logo-mark.png|apple-icon.png|icon.png).*)",
+    "/((?!api/auth|api/register|api/track-record|login|signup|pricing|track-record|terms|privacy|_next/static|_next/image|favicon.ico|logo-mark.png|apple-icon.png|icon.png|manifest.webmanifest|sw.js|icon-192.png|icon-512.png|icon-maskable-512.png).*)",
   ],
 };
