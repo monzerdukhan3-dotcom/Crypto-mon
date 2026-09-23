@@ -8,6 +8,7 @@ import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
+import { detectTrend } from "@/lib/trend";
 import type { Candle, Zone } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
 import { detectSearchableZones, detectZones } from "@/lib/zones";
@@ -150,6 +151,13 @@ export default function AnalysisDashboard() {
     () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(searchableZones, currentPrice, candles) : null),
     [tradePlan, searchableZones, currentPrice, candles]
   );
+  // Same trend-gate check buildTradePlan itself applies — see
+  // OpportunityResult.approachingTrendReady's doc comment for the full
+  // reasoning. Only meaningful while approachingZone is set.
+  const approachingTrendReady = useMemo(
+    () => !approachingZone || detectTrend(candles) !== "down" || approachingZone.htfOverlap,
+    [approachingZone, candles]
+  );
   // Purely explanatory: the zone nearest the current price that broke since
   // it formed, so a box that was on the chart a moment ago doesn't just
   // vanish with no trace of why once price closes through it. Never feeds
@@ -270,6 +278,7 @@ export default function AnalysisDashboard() {
               zones={displayZones}
               tradePlan={tradePlan}
               approachingZone={approachingZone}
+              approachingTrendReady={approachingTrendReady}
               tradeProgress={tradeProgress}
               confidence={confidence}
               technicalSummary={technicalSummary}
