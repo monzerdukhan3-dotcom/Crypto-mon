@@ -76,7 +76,7 @@ export default function SymbolSearchSelect({ symbols, value, onChange }: SymbolS
               className="w-full bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none"
             />
           </div>
-          <ul className="max-h-64 overflow-y-auto py-1">
+          <ul className="max-h-[60vh] overflow-y-auto py-1 sm:max-h-96">
             {filtered.length === 0 ? (
               <li className="px-3 py-2 text-sm text-muted">لا توجد نتائج</li>
             ) : (
