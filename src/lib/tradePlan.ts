@@ -237,6 +237,26 @@ export function findApproachingDemandZone(
 }
 
 /**
+ * The first candle, after `fromTime`, whose close breaks decisively through
+ * the zone — demand: close below `bottom`; supply: close above `top`.
+ * Mirrors zones.ts' own evaluateZoneRange break condition exactly (just
+ * scanning from the zone's endTime rather than its internal pivotIndex,
+ * which land on the same candle in practice), so the candle this reports
+ * is the same one that flipped the zone's own `active` flag to false.
+ */
+function findBreakTime(zone: Zone, candles: Candle[]): number | null {
+  const startIndex = candles.findIndex((c) => c.time >= zone.endTime);
+  if (startIndex === -1) return null;
+
+  for (let i = startIndex; i < candles.length; i++) {
+    const c = candles[i];
+    const brokenThrough = zone.type === "demand" ? c.close < zone.bottom : c.close > zone.top;
+    if (brokenThrough) return c.time;
+  }
+  return null;
+}
+
+/**
  * The nearest zone to `currentPrice` that has since broken (`active:
  * false`) — the zone that would otherwise just silently stop being drawn
  * once price closed decisively through it, leaving no trace of why a
@@ -247,6 +267,11 @@ export function findApproachingDemandZone(
  * informational — CandlestickChart renders it dimmed and dashed with a
  * "منطقة مكسورة" label instead of the normal solid box, and it never
  * feeds into buildTradePlan or any other trading decision.
+ *
+ * The returned zone's `endTime` is moved up to the actual breakout candle
+ * (rather than the zone's own narrow formation box) so the rectangle
+ * CandlestickChart draws stops right where price broke it, instead of
+ * trailing on as if the level were still active.
  */
 export function findRecentlyBrokenZone(
   zones: Zone[],
@@ -268,7 +293,11 @@ export function findRecentlyBrokenZone(
   const candidates = zones.filter((z) => !z.active && distanceToPrice(z) <= maxDistance);
   if (candidates.length === 0) return null;
 
-  return candidates.reduce((closest, zone) => (distanceToPrice(zone) < distanceToPrice(closest) ? zone : closest));
+  const nearest = candidates.reduce((closest, zone) =>
+    distanceToPrice(zone) < distanceToPrice(closest) ? zone : closest
+  );
+  const breakTime = findBreakTime(nearest, candles);
+  return breakTime === null ? nearest : { ...nearest, endTime: breakTime };
 }
 
 /**
