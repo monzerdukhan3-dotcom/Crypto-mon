@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
-import { buildTradePlan, findApproachingDemandZone, getTradePlanProgress } from "@/lib/tradePlan";
+import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone, getTradePlanProgress } from "@/lib/tradePlan";
 import { detectTrend } from "@/lib/trend";
 import { detectSearchableZones } from "@/lib/zones";
 import type { Timeframe } from "@/lib/constants";
@@ -34,6 +34,15 @@ export interface OpportunityResult {
    * on the market's current footing, it wouldn't. Null for "entry"/"none".
    */
   approachingTrendReady: boolean | null;
+  /**
+   * A demand zone near the current price that broke since it formed — see
+   * findRecentlyBrokenZone's own doc comment. Surfaced regardless of
+   * status (not just "approaching") so a subscriber who placed a pending
+   * buy order at a zone this page once pointed to isn't left unaware once
+   * that specific zone breaks and this row quietly moves on to suggesting
+   * a different one instead.
+   */
+  recentlyBrokenZone: { top: number; bottom: number } | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -85,6 +94,8 @@ export async function GET(request: NextRequest) {
     const approachingZone = !freshTradePlan
       ? findApproachingDemandZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 })
       : null;
+    const brokenZone = findRecentlyBrokenZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 });
+    const recentlyBrokenDemandZone = brokenZone?.type === "demand" ? brokenZone : null;
 
     const result: OpportunityResult = {
       symbol,
@@ -98,6 +109,9 @@ export async function GET(request: NextRequest) {
       distancePct: approachingZone ? ((currentPrice - approachingZone.top) / currentPrice) * 100 : null,
       approachingTrendReady: approachingZone
         ? detectTrend(candles) !== "down" || approachingZone.htfOverlap
+        : null,
+      recentlyBrokenZone: recentlyBrokenDemandZone
+        ? { top: recentlyBrokenDemandZone.top, bottom: recentlyBrokenDemandZone.bottom }
         : null,
     };
 

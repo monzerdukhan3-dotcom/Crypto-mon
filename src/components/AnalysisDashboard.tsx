@@ -279,6 +279,7 @@ export default function AnalysisDashboard() {
               tradePlan={tradePlan}
               approachingZone={approachingZone}
               approachingTrendReady={approachingTrendReady}
+              recentlyBrokenZone={recentlyBrokenZone}
               tradeProgress={tradeProgress}
               confidence={confidence}
               technicalSummary={technicalSummary}
