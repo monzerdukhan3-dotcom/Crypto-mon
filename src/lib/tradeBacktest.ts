@@ -69,10 +69,11 @@ export function backtestTradeHistory(
     if (entryIndex === -1) continue; // price never actually left, then came back, to this zone
 
     // تداخل المناطق: same eligibility gate buildTradePlan applies live —
-    // a broken/non-up trend at entry time needed higher-timeframe overlap
-    // to be a real buy, judged only from what was known as of that candle.
+    // only a confirmed downtrend at entry time needed higher-timeframe
+    // overlap to be a real buy (a sideways trend is fine on its own),
+    // judged only from what was known as of that candle.
     const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
-    if (trendAtEntry !== "up" && !zone.htfOverlap) continue;
+    if (trendAtEntry === "down" && !zone.htfOverlap) continue;
 
     const plan = planFromZone(zone, zones);
     if (!plan) continue;
