@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
 import { buildTradePlan, findApproachingDemandZone, getTradePlanProgress } from "@/lib/tradePlan";
+import { detectTrend } from "@/lib/trend";
 import { detectSearchableZones } from "@/lib/zones";
 import type { Timeframe } from "@/lib/constants";
 
@@ -23,6 +24,16 @@ export interface OpportunityResult {
   stopLoss: number | null;
   /** For "approaching" only: how far price still has to fall to reach entry, as a %. */
   distancePct: number | null;
+  /**
+   * For "approaching" only: whether, as of right now, buildTradePlan's own
+   * trend gate would accept a return to this zone — a confirmed downtrend
+   * (with no higher-timeframe overlap) rejects it. Only a same-moment
+   * snapshot: the trend can still flip before price actually arrives, so
+   * this isn't a promise either way — it's here so "تقترب من منطقة دخول"
+   * doesn't read as a guarantee a trade opens once price gets there when,
+   * on the market's current footing, it wouldn't. Null for "entry"/"none".
+   */
+  approachingTrendReady: boolean | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -85,6 +96,9 @@ export async function GET(request: NextRequest) {
       entry: freshTradePlan?.entry ?? approachingZone?.top ?? null,
       stopLoss: freshTradePlan?.stopLoss ?? null,
       distancePct: approachingZone ? ((currentPrice - approachingZone.top) / currentPrice) * 100 : null,
+      approachingTrendReady: approachingZone
+        ? detectTrend(candles) !== "down" || approachingZone.htfOverlap
+        : null,
     };
 
     return NextResponse.json(result);

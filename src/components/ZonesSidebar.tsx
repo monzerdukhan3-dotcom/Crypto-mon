@@ -36,6 +36,12 @@ interface ZonesSidebarProps {
   zones: Zone[];
   tradePlan: TradePlan | null;
   approachingZone: Zone | null;
+  /**
+   * Whether, as of right now, buildTradePlan's own trend gate would accept
+   * a return to approachingZone — see OpportunityResult's identical field
+   * for the full reasoning. Only meaningful alongside approachingZone.
+   */
+  approachingTrendReady: boolean;
   tradeProgress: TradeProgress | null;
   confidence: TradeConfidence | null;
   technicalSummary: string;
@@ -145,6 +151,7 @@ export default function ZonesSidebar({
   zones,
   tradePlan,
   approachingZone,
+  approachingTrendReady,
   tradeProgress,
   confidence,
   technicalSummary,
@@ -224,6 +231,11 @@ export default function ZonesSidebar({
                 السعر يقترب من منطقة طلب عند {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)}
                 — جهّز أمر شراء معلّق عندها.
               </Note>
+              {!approachingTrendReady && (
+                <Note tone="warning" icon={AlertTriangle}>
+                  الاتجاه العام هابط حاليًا — لن تُفتح صفقة عند وصول السعر لهذه المنطقة ما لم يتحول الاتجاه أولًا.
+                </Note>
+              )}
               <Row icon={Crosshair} label="نقطة التعليق المقترحة" value={formatPrice(approachingZone.top)} />
             </>
           ) : (

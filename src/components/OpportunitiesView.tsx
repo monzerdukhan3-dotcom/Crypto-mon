@@ -36,6 +36,13 @@ async function fetchOpportunity(symbol: string, timeframe: Timeframe): Promise<O
 
 function OpportunityRow({ item }: { item: OpportunityResult }) {
   const isEntry = item.status === "entry";
+  // Only meaningful for "approaching" — see approachingTrendReady's own
+  // doc comment on OpportunityResult. A confirmed downtrend right now
+  // means buildTradePlan's own gate would reject a return to this zone as
+  // things stand, so a subscriber watching this row shouldn't expect a
+  // trade to open the moment price gets there unless the trend turns
+  // first. Not shown for "entry" (already open) or when the trend is fine.
+  const trendWarning = !isEntry && item.approachingTrendReady === false;
   return (
     <li className="rounded-xl border border-surface-border bg-surface p-4 shadow-sm transition-shadow duration-200 hover:shadow-md">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -59,6 +66,11 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
           </Link>
         </div>
       </div>
+      {trendWarning && (
+        <p className="mt-2 rounded-lg bg-warning-soft px-2.5 py-1.5 text-xs text-warning">
+          ⚠️ الاتجاه العام هابط حالياً — لن تُفتح صفقة عند وصول السعر لهذه المنطقة ما لم يتحول الاتجاه أولاً
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted sm:grid-cols-4">
         <span>
           السعر الحالي: <span className="font-medium text-foreground">{formatPrice(item.currentPrice)}</span>
