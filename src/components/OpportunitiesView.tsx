@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TIMEFRAMES, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
-import { readSessionCache, writeSessionCache } from "@/lib/sessionCache";
+import { readLocalCache, writeLocalCache } from "@/lib/localCache";
 import type { OpportunityResult } from "@/app/api/opportunities/route";
 
 // Bumped only if OpportunityResult's shape changes — an old cached entry
 // from a previous version would otherwise render with missing fields.
-const CACHE_KEY = "crypto-mon:opportunities-cache:v2";
+const CACHE_KEY = "crypto-mon:opportunities-cache:v3";
 
 // Fetched in small batches rather than all 304 (76 coins × 4 timeframes) at
 // once — each request is still independently cached server-side for a
@@ -116,10 +116,10 @@ type NotifyState = "unsupported" | "default" | "granted" | "denied";
 export default function OpportunitiesView() {
   // Seeded from last visit's cached scan (if any) so this page paints the
   // previous result immediately instead of a loading spinner on every
-  // open — see readSessionCache's own doc comment. The effect below still
+  // open — see readLocalCache's own doc comment. The effect below still
   // runs a fresh scan regardless and replaces this the moment it finishes.
   const [results, setResults] = useState<OpportunityResult[] | null>(() =>
-    readSessionCache<OpportunityResult[]>(CACHE_KEY)
+    readLocalCache<OpportunityResult[]>(CACHE_KEY)
   );
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [reloadKey, setReloadKey] = useState(0);
@@ -197,7 +197,7 @@ export default function OpportunitiesView() {
 
       if (!cancelled) {
         setResults(collected);
-        writeSessionCache(CACHE_KEY, collected);
+        writeLocalCache(CACHE_KEY, collected);
       }
     }
 
