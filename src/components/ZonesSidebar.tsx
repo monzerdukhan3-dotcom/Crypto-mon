@@ -233,6 +233,12 @@ export default function ZonesSidebar({
           )}
           {tradePlan ? (
             <>
+              {tradePlan.retestNumber > 1 && (
+                <Note tone="info" icon={Layers}>
+                  هذه إعادة اختبار رقم {tradePlan.retestNumber} لهذه المنطقة — نجحت من قبل، لكن الثقة أقل من دخول
+                  جديد على منطقة لم تُختبر بعد.
+                </Note>
+              )}
               <Row icon={Crosshair} label="الدخول" value={formatPrice(tradePlan.entry)} />
               <Row
                 icon={Shield}

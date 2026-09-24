@@ -1,5 +1,5 @@
 import type { Timeframe } from "./constants";
-import { findEntryIndex, planFromZone } from "./tradePlan";
+import { findEntryIndices, planFromZone } from "./tradePlan";
 import { evaluateTradeOutcome, type TradeRecord } from "./tradeHistory";
 import { scoreTradeConfidence } from "./tradeConfidence";
 import { detectTrend } from "./trend";
@@ -23,12 +23,17 @@ const HISTORY_START_TIME = 1789903297;
  * trade the site would have proposed, deterministically — no stored state
  * needed, since it's rebuilt fresh from the same public candles everyone
  * sees. For every demand zone that ever validly formed (detectZoneHistory,
- * broken or not), finds the first candle after formation that genuinely
- * returns to (or inside) the zone's top — a real pullback after a
- * confirmed break away, the same rule buildTradePlan applies live (see
- * findEntryIndex) — and treats that as the entry, then resolves it forward
- * exactly like evaluateTradeOutcome does for a live-logged record: stop
- * loss takes priority over targets on whichever candle hits first.
+ * broken or not), finds every distinct candle after formation that
+ * genuinely returns to (or inside) the zone's top — up to MAX_ZONE_ENTRIES
+ * of them, the same "3 retests while it stays unbroken" rule buildTradePlan
+ * applies live (see findEntryIndices) — and treats each one as its own
+ * entry, resolved forward exactly like evaluateTradeOutcome does for a
+ * live-logged record: stop loss takes priority over targets on whichever
+ * candle hits first. A zone that's tested and held once can go on to
+ * produce a second and third record this way, each with its own
+ * retestNumber and a lower confidence score (scoreTradeConfidence's own
+ * retestPenalty) — still a real, tradable setup, just less fresh than the
+ * original.
  *
  * Deliberately NOT filtered against detectZones' live cap (the top few
  * zones the chart actually draws right now): that cap exists purely to
@@ -65,52 +70,65 @@ export function backtestTradeHistory(
   for (const zone of zones) {
     if (zone.type !== "demand") continue;
 
-    const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
-    if (entryIndex === -1) continue; // price never actually left, then came back, to this zone
-
-    // تداخل المناطق: same eligibility gate buildTradePlan applies live —
-    // only a confirmed downtrend at entry time needed higher-timeframe
-    // overlap to be a real buy (a sideways trend is fine on its own),
-    // judged only from what was known as of that candle.
-    const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
-    if (trendAtEntry === "down" && !zone.htfOverlap) continue;
-
-    const plan = planFromZone(zone, zones);
-    if (!plan) continue;
-
-    // Strip the pivotIndex detectZoneHistory adds internally — the record
+    // Strip the pivotIndex detectZoneHistory adds internally — a record
     // only needs the plain Zone shape it'll later draw on its own chart.
     const { pivotIndex: _pivotIndex, ...zoneWithoutPivot } = zone;
     void _pivotIndex;
 
-    const preliminary: TradeRecord = {
-      id: `${symbol}:${timeframe}:${zone.id}`,
-      symbol,
-      timeframe,
-      loggedAt: candles[entryIndex].time,
-      entry: plan.entry,
-      stopLoss: plan.stopLoss,
-      targets: plan.targets,
-      riskRewardRatios: plan.riskRewardRatios,
-      zone: zoneWithoutPivot,
-      confidenceScore: 0,
-      highestTargetHit: 0,
-      stoppedOut: false,
-      resolved: false,
-      resolvedAt: null,
-    };
+    const entryIndices = findEntryIndices(candles, zone.endTime, zone.top, zone.bottom);
+    for (let i = 0; i < entryIndices.length; i++) {
+      const entryIndex = entryIndices[i];
+      const retestNumber = i + 1;
 
-    const resolved = evaluateTradeOutcome(preliminary, candles);
-    // See HISTORY_START_TIME above: only a fully-resolved-before-launch
-    // trade is fabricated history — a still-open one is exactly what
-    // today's opportunities scan would also be showing.
-    if (resolved.resolved && resolved.resolvedAt !== null && resolved.resolvedAt < HISTORY_START_TIME) continue;
+      // تداخل المناطق: same eligibility gate buildTradePlan applies live —
+      // only a confirmed downtrend at entry time needed higher-timeframe
+      // overlap to be a real buy (a sideways trend is fine on its own),
+      // judged only from what was known as of that specific entry's own
+      // candle — the trend can genuinely differ between a zone's 1st and
+      // 2nd retest, so each is checked independently, not inherited from
+      // the first.
+      const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
+      if (trendAtEntry === "down" && !zone.htfOverlap) continue;
 
-    // Scored from only what was known as of the entry candle, not the full
-    // (future-including) series, so the reversal-pattern check can't peek ahead.
-    const confidence = scoreTradeConfidence(plan, zones, candles.slice(0, entryIndex + 1), null);
+      const basePlan = planFromZone(zone, zones);
+      if (!basePlan) continue;
 
-    records.push({ ...resolved, confidenceScore: confidence.score });
+      const preliminary: TradeRecord = {
+        id: `${symbol}:${timeframe}:${zone.id}:${retestNumber}`,
+        symbol,
+        timeframe,
+        loggedAt: candles[entryIndex].time,
+        entry: basePlan.entry,
+        stopLoss: basePlan.stopLoss,
+        targets: basePlan.targets,
+        riskRewardRatios: basePlan.riskRewardRatios,
+        zone: zoneWithoutPivot,
+        retestNumber,
+        confidenceScore: 0,
+        highestTargetHit: 0,
+        stoppedOut: false,
+        resolved: false,
+        resolvedAt: null,
+      };
+
+      const resolved = evaluateTradeOutcome(preliminary, candles);
+      // See HISTORY_START_TIME above: only a fully-resolved-before-launch
+      // trade is fabricated history — a still-open one is exactly what
+      // today's opportunities scan would also be showing.
+      if (resolved.resolved && resolved.resolvedAt !== null && resolved.resolvedAt < HISTORY_START_TIME) continue;
+
+      // Scored from only what was known as of the entry candle, not the
+      // full (future-including) series, so the reversal-pattern check
+      // can't peek ahead.
+      const confidence = scoreTradeConfidence(
+        { ...basePlan, retestNumber },
+        zones,
+        candles.slice(0, entryIndex + 1),
+        null
+      );
+
+      records.push({ ...resolved, confidenceScore: confidence.score });
+    }
   }
 
   return records;

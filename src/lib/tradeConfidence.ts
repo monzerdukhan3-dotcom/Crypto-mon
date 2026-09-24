@@ -13,6 +13,14 @@ const REVERSAL_PATTERN_BONUS = 10;
 /** Applied when the daily trend is down while this (long, demand-zone) setup fights it. */
 const MTF_CONFLICT_PENALTY = 15;
 const NEWS_RISK_PENALTY = 15;
+/**
+ * Points subtracted per retest past the first (see TradePlan.retestNumber)
+ * — a zone that's already been tested and held once is still tradable up
+ * to MAX_ZONE_ENTRIES times, but each return is progressively less fresh
+ * than a level price is hitting for the first time, so it's marked down
+ * rather than scored identically to the original entry.
+ */
+const RETEST_PENALTY_PER_LEVEL = 10;
 
 export interface TradeConfidence {
   /** 0-100 overall score. */
@@ -27,6 +35,7 @@ export interface TradeConfidence {
   hasMtfConflict: boolean;
   newsRiskPenalty: number;
   upcomingEventName: string | null;
+  retestPenalty: number;
 }
 
 /**
@@ -38,6 +47,8 @@ export interface TradeConfidence {
  *   actually reacting at the zone right now — +10
  * - a conflicting daily trend (down, while this is a long setup) — -15
  * - a high-impact economic event due soon, once a calendar is wired up — -15
+ * - a repeat retest of the same zone (tradePlan.retestNumber > 1) — -10
+ *   per level past the first, up to -20 at the 3rd and final one
  */
 export function scoreTradeConfidence(
   tradePlan: TradePlan,
@@ -45,9 +56,10 @@ export function scoreTradeConfidence(
   candles: Candle[],
   higherTimeframeCandles: Candle[] | null = null
 ): TradeConfidence {
-  const { zone: entryZone, entry } = tradePlan;
+  const { zone: entryZone, entry, retestNumber } = tradePlan;
 
   const strengthPoints = STRENGTH_POINTS[entryZone.strength];
+  const retestPenalty = Math.max(0, retestNumber - 1) * RETEST_PENALTY_PER_LEVEL;
 
   const confluenceCount = zones.filter(
     (z) =>
@@ -85,7 +97,13 @@ export function scoreTradeConfidence(
   const newsRiskPenalty = upcomingEvent ? NEWS_RISK_PENALTY : 0;
 
   const rawScore =
-    strengthPoints + confluencePoints + distancePoints + reversalPatternBonus - mtfConflictPenalty - newsRiskPenalty;
+    strengthPoints +
+    confluencePoints +
+    distancePoints +
+    reversalPatternBonus -
+    mtfConflictPenalty -
+    newsRiskPenalty -
+    retestPenalty;
   const score = Math.max(0, Math.min(100, rawScore));
 
   return {
@@ -100,5 +118,6 @@ export function scoreTradeConfidence(
     hasMtfConflict,
     newsRiskPenalty,
     upcomingEventName: upcomingEvent?.name ?? null,
+    retestPenalty,
   };
 }

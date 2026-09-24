@@ -14,7 +14,18 @@ import type { Candle, TradePlan, Zone } from "./types";
  * "new opportunity" to list on the opportunities page.
  */
 export function getTradePlanProgress(tradePlan: TradePlan, candles: Candle[]): { highestTargetHit: number } {
-  const entryIndex = findEntryIndex(candles, tradePlan.zone.endTime, tradePlan.entry);
+  // tradePlan.retestNumber picks out *which* of this zone's (up to
+  // MAX_ZONE_ENTRIES) returns this specific plan is — entry price is the
+  // same zone.top every time, so the plain single-entry finder can't tell
+  // them apart; see findEntryIndices' own doc comment.
+  const entries = findEntryIndices(
+    candles,
+    tradePlan.zone.endTime,
+    tradePlan.entry,
+    tradePlan.zone.bottom,
+    tradePlan.retestNumber
+  );
+  const entryIndex = entries[tradePlan.retestNumber - 1] ?? -1;
   if (entryIndex === -1) return { highestTargetHit: 0 };
 
   let highestTargetHit = 0;
@@ -70,6 +81,78 @@ export function findEntryIndex(candles: Candle[], fromTime: number, zoneTop: num
     if (candles[i].close <= zoneTop) return i;
   }
   return -1;
+}
+
+/** How many times price may re-enter the same still-unbroken demand zone before it's considered exhausted. */
+export const MAX_ZONE_ENTRIES = 3;
+
+/**
+ * Every distinct return to the zone since its confirmed breakout, up to
+ * `maxEntries` (index 0 = the same first entry findEntryIndex itself
+ * finds). Each entry past the first only counts once the previous one has
+ * genuinely resolved *away* from the zone again — a close back above
+ * `zoneTop`, meaning that test succeeded and price left, not just ticked
+ * back and forth inside the box — and only as long as the zone hasn't
+ * broken (a close decisively below `zoneBottom`, zones.ts' own definition
+ * of `Zone.active` flipping false) at any point since. A zone that breaks
+ * is exhausted for good at that point: "صالحة للدخول 3 مرات ما دامت
+ * سليمة" — no further entries, whether or not it's found all 3 yet.
+ *
+ * The entry condition itself (`close <= zoneTop`) is identical for every
+ * one of them, including the first — deliberately not stricter for a
+ * retest than for the original entry, even for a candle that's already
+ * crashed clean through the zone and its stop: that candle is still a
+ * genuine fill, just one evaluateTradeOutcome then correctly resolves as
+ * an instant loss (see its own doc comment) rather than one this function
+ * should second-guess by excluding.
+ */
+export function findEntryIndices(
+  candles: Candle[],
+  fromTime: number,
+  zoneTop: number,
+  zoneBottom: number,
+  maxEntries: number = MAX_ZONE_ENTRIES
+): number[] {
+  const startIndex = candles.findIndex((c) => c.time >= fromTime);
+  if (startIndex === -1) return [];
+
+  let breakoutIndex = -1;
+  for (let i = startIndex; i < candles.length; i++) {
+    if (candles[i].close > zoneTop) {
+      breakoutIndex = i;
+      break;
+    }
+  }
+  if (breakoutIndex === -1) return [];
+
+  const entries: number[] = [];
+  let searchFrom = breakoutIndex + 1;
+
+  while (entries.length < maxEntries) {
+    let entryIndex = -1;
+    for (let i = searchFrom; i < candles.length; i++) {
+      if (candles[i].close <= zoneTop) {
+        entryIndex = i;
+        break;
+      }
+    }
+    if (entryIndex === -1) break;
+    entries.push(entryIndex);
+    if (entries.length >= maxEntries) break;
+
+    let leftAgainIndex = -1;
+    for (let i = entryIndex + 1; i < candles.length; i++) {
+      if (candles[i].close < zoneBottom) return entries; // broken — no further entries
+      if (candles[i].close > zoneTop) {
+        leftAgainIndex = i;
+        break;
+      }
+    }
+    if (leftAgainIndex === -1) break;
+    searchFrom = leftAgainIndex + 1;
+  }
+
+  return entries;
 }
 
 /**
@@ -143,7 +226,11 @@ export function planFromZone(
   const riskRewardRatios = targets.map((t) => Number(((t - entry) / riskAmount).toFixed(2)));
   if (riskRewardRatios[0] < minFirstTargetRR) return null;
 
-  return { zone, entry, stopLoss, targets, riskAmount, riskRewardRatios };
+  // Defaults to the first entry — buildTradePlan and backtestTradeHistory
+  // both override this with the actual retest number once they know it,
+  // since planFromZone itself only computes the zone's geometry, not which
+  // return to it this particular plan is for.
+  return { zone, entry, stopLoss, targets, riskAmount, riskRewardRatios, retestNumber: 1 };
 }
 
 /**
@@ -184,36 +271,65 @@ export function buildTradePlan(
   candles: Candle[],
   options: BuildTradePlanOptions = {}
 ): TradePlan | null {
-  const openZones = zones.filter((zone) => {
-    if (zone.type !== "demand") return false;
+  interface Candidate {
+    zone: Zone;
+    retestNumber: number;
+    plan: TradePlan;
+  }
 
-    const entryIndex = findEntryIndex(candles, zone.endTime, zone.top);
-    if (entryIndex === -1) return false;
+  const candidates: Candidate[] = [];
 
-    // Reject only a confirmed downtrend at entry — a demand-zone bounce
-    // fighting an actively falling market, unless the zone shares price
-    // with a daily zone (zone.htfOverlap), the one case worth taking even
-    // against the entry-timeframe trend. A sideways trend is let through
-    // now too: still a real bounce off a real level, just without a clear
-    // trend either way, which "!== up" used to reject alongside "down".
-    const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
-    if (trendAtEntry === "down" && !zone.htfOverlap) return false;
+  for (const zone of zones) {
+    if (zone.type !== "demand") continue;
 
-    const plan = planFromZone(zone, zones, options);
-    if (!plan) return false;
+    // Every distinct return to this zone so far (up to MAX_ZONE_ENTRIES),
+    // each independently eligible — the market's trend can genuinely
+    // differ between a zone's 1st and 2nd retest, so this isn't just "was
+    // entry 1 valid, copy that for the rest".
+    const entryIndices = findEntryIndices(candles, zone.endTime, zone.top, zone.bottom);
+    for (let i = 0; i < entryIndices.length; i++) {
+      const entryIndex = entryIndices[i];
+      const retestNumber = i + 1;
 
-    return isEntryStillOpen(plan.stopLoss, plan.targets, candles[entryIndex].time, candles);
-  });
+      // Reject only a confirmed downtrend at entry — a demand-zone bounce
+      // fighting an actively falling market, unless the zone shares price
+      // with a daily zone (zone.htfOverlap), the one case worth taking
+      // even against the entry-timeframe trend. A sideways trend is let
+      // through too: still a real bounce off a real level, just without a
+      // clear trend either way.
+      const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
+      if (trendAtEntry === "down" && !zone.htfOverlap) continue;
 
-  if (openZones.length === 0) return null;
+      const basePlan = planFromZone(zone, zones, options);
+      if (!basePlan) continue;
+
+      if (!isEntryStillOpen(basePlan.stopLoss, basePlan.targets, candles[entryIndex].time, candles)) continue;
+
+      candidates.push({ zone, retestNumber, plan: { ...basePlan, retestNumber } });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  // A zone can have more than one of its retests simultaneously "still
+  // open" (price left after an early one without yet hitting its stop or
+  // final target, then came back for another) — only the latest is the
+  // position actually worth showing as this zone's live plan.
+  const latestPerZone = new Map<string, Candidate>();
+  for (const candidate of candidates) {
+    const existing = latestPerZone.get(candidate.zone.id);
+    if (!existing || candidate.retestNumber > existing.retestNumber) {
+      latestPerZone.set(candidate.zone.id, candidate);
+    }
+  }
 
   // Among every zone with a still-open position, the one whose top sits
   // closest to the current price — the most immediately relevant to show.
-  const nearest = openZones.reduce((closest, zone) =>
-    Math.abs(zone.top - currentPrice) < Math.abs(closest.top - currentPrice) ? zone : closest
+  const nearest = [...latestPerZone.values()].reduce((closest, candidate) =>
+    Math.abs(candidate.zone.top - currentPrice) < Math.abs(closest.zone.top - currentPrice) ? candidate : closest
   );
 
-  return planFromZone(nearest, zones, options);
+  return nearest.plan;
 }
 
 /**
@@ -321,7 +437,17 @@ export function findRecentlyBrokenZone(
  * available candle if nothing has been hit yet.
  */
 export function computeTradePlanSpan(tradePlan: TradePlan, candles: Candle[]): { startTime: number; endTime: number } {
-  const entryIndex = findEntryIndex(candles, tradePlan.zone.endTime, tradePlan.entry);
+  // Picks out this plan's own retest (see findEntryIndices) rather than
+  // always the zone's first entry — entry price is the same zone.top
+  // either way, so the plain single-entry finder can't tell them apart.
+  const entries = findEntryIndices(
+    candles,
+    tradePlan.zone.endTime,
+    tradePlan.entry,
+    tradePlan.zone.bottom,
+    tradePlan.retestNumber
+  );
+  const entryIndex = entries[tradePlan.retestNumber - 1] ?? -1;
   const fromIndex = entryIndex === -1 ? 0 : entryIndex;
   const startTime = candles[fromIndex]?.time ?? tradePlan.zone.endTime;
 

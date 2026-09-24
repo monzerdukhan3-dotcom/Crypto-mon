@@ -20,6 +20,8 @@ export interface TradeRecord {
    * entirely from the one this specific trade was based on.
    */
   zone: Zone;
+  /** Which distinct return to this same still-unbroken zone this record is — see TradePlan.retestNumber. */
+  retestNumber: number;
   confidenceScore: number;
   /** Highest target index reached so far (0 = none). */
   highestTargetHit: number;

@@ -43,6 +43,8 @@ export interface OpportunityResult {
    * a different one instead.
    */
   recentlyBrokenZone: { top: number; bottom: number } | null;
+  /** For "entry" only: which distinct return to this zone this is — see TradePlan.retestNumber. */
+  retestNumber: number | null;
 }
 
 export async function GET(request: NextRequest) {
@@ -113,6 +115,7 @@ export async function GET(request: NextRequest) {
       recentlyBrokenZone: recentlyBrokenDemandZone
         ? { top: recentlyBrokenDemandZone.top, bottom: recentlyBrokenDemandZone.bottom }
         : null,
+      retestNumber: freshTradePlan?.retestNumber ?? null,
     };
 
     return NextResponse.json(result);

@@ -146,6 +146,14 @@ function TradeRecordRow({
           <span className="font-semibold text-foreground">{record.symbol}</span>
           <span className="text-xs text-muted">{timeframeLabel(record.timeframe)}</span>
           <span className="text-xs text-muted">{formatDate(record.loggedAt)}</span>
+          {record.retestNumber > 1 && (
+            <span
+              className="rounded-full bg-surface-border px-2 py-0.5 text-xs font-medium text-muted"
+              title="منطقة اختُبرت من قبل ونجحت — دخول جديد بثقة أقل"
+            >
+              إعادة اختبار #{record.retestNumber}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE_CLASSES[info.tone]}`}>{info.label}</span>

@@ -60,4 +60,14 @@ export interface TradePlan {
   riskAmount: number;
   /** Reward-to-risk ratio for each target, matching the targets array. */
   riskRewardRatios: number[];
+  /**
+   * Which distinct return to this same still-unbroken zone this plan is —
+   * 1 for the first time price ever came back to it, 2 or 3 for a later
+   * retest after an earlier one moved away again (see
+   * findEntryIndices). A zone offers at most 3 before it's considered
+   * exhausted; each retest past the first is marked with reduced
+   * confidence (scoreTradeConfidence's own retestPenalty) since a level
+   * that's already been tested and held is progressively less fresh.
+   */
+  retestNumber: number;
 }
