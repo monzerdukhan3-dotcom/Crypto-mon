@@ -3,7 +3,7 @@
 import { Bell, BellOff, BellRing, Loader2, RefreshCw, Target } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TIMEFRAMES, type SymbolInfo, type Timeframe } from "@/lib/constants";
+import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES, type SymbolInfo, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import { readLocalCache, writeLocalCache } from "@/lib/localCache";
 import type { OpportunityResult } from "@/app/api/opportunities/route";
@@ -167,7 +167,8 @@ export default function OpportunitiesView() {
         return;
       }
 
-      const pairs = symbols.flatMap((s) => TIMEFRAMES.map((t) => ({ symbol: s.symbol, timeframe: t.value })));
+      // 15m excluded — see TRADE_SUGGESTION_TIMEFRAMES' own doc comment.
+      const pairs = symbols.flatMap((s) => TRADE_SUGGESTION_TIMEFRAMES.map((tf) => ({ symbol: s.symbol, timeframe: tf })));
       setProgress({ done: 0, total: pairs.length });
 
       const collected: OpportunityResult[] = [];
@@ -228,9 +229,11 @@ export default function OpportunitiesView() {
       <div className="relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <p className="text-sm leading-relaxed text-muted">
-          مسح تلقائي حي لـ 76 عملة على الأطر الزمنية الأربعة كلها — يعرض أي عملة وصل سعرها الآن لمنطقة طلب
+          مسح تلقائي حي لـ 76 عملة على فريمات الساعة و4 ساعات واليومي — يعرض أي عملة وصل سعرها الآن لمنطقة طلب
           صالحة للدخول، وأي عملة تقترب منها. يتجدد تلقائيًا كل دقيقة طالما هذه الصفحة مفتوحة. تنبيهات المتصفح
           (لو فعّلتها) تعمل فقط أثناء بقاء هذه الصفحة مفتوحة في متصفحك — وليست تنبيهات push تصلك والتطبيق مغلق.
+          فريم 15 دقيقة مستبعد من هذا المسح (نسبة نجاح حقيقية ~43% فقط في السجل)، لكنه لا يزال متاحًا للمتابعة
+          من الصفحة الرئيسية.
         </p>
         <div className="mt-4">
           {notify === "granted" ? (
