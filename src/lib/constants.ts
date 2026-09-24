@@ -110,6 +110,20 @@ export const TIMEFRAMES: TimeframeInfo[] = [
   { value: "1d", label: "1 Day" },
 ];
 
+/**
+ * Timeframes new trade plans are suggested on — 15m excluded (2026-09-24):
+ * across the full symbol list its real backtest win rate sat at ~43%
+ * (158 losses vs. 120 wins), far below every other timeframe (77-87%),
+ * so the site no longer proposes fresh entries there. This only gates
+ * *new* signals: the chart, its candles and zones, and /history and
+ * /track-record's own past 15m performance are untouched — a visitor can
+ * still pick 15m to watch price action, and the real historical record
+ * (wins and losses alike) stays visible rather than quietly disappearing.
+ */
+export const TRADE_SUGGESTION_TIMEFRAMES: Timeframe[] = TIMEFRAMES.filter((t) => t.value !== "15m").map(
+  (t) => t.value
+);
+
 export const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
   "15m": 15 * 60,
   "1h": 60 * 60,

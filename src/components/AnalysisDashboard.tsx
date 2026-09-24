@@ -3,7 +3,14 @@
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { SUPPORTED_SYMBOLS, TIMEFRAMES, type Symbol, type SymbolInfo, type Timeframe } from "@/lib/constants";
+import {
+  SUPPORTED_SYMBOLS,
+  TIMEFRAMES,
+  TRADE_SUGGESTION_TIMEFRAMES,
+  type Symbol,
+  type SymbolInfo,
+  type Timeframe,
+} from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
@@ -141,15 +148,25 @@ export default function AnalysisDashboard() {
     () => detectSearchableZones(candles, { higherTimeframeCandles: dailyCandles }),
     [candles, dailyCandles]
   );
+  // 15m is excluded from new trade suggestions (see
+  // TRADE_SUGGESTION_TIMEFRAMES' own doc comment: ~43% real win rate,
+  // far below every other timeframe) — the chart, its candles and zones
+  // (detectZones/detectSearchableZones above) stay fully available on
+  // 15m regardless, only the plan/approaching-zone suggestions gate on it.
+  const tradeSuggestionsEnabled = TRADE_SUGGESTION_TIMEFRAMES.includes(timeframe);
   const tradePlan = useMemo(
-    () => (currentPrice !== null ? buildTradePlan(searchableZones, currentPrice, candles) : null),
-    [searchableZones, currentPrice, candles]
+    () =>
+      tradeSuggestionsEnabled && currentPrice !== null ? buildTradePlan(searchableZones, currentPrice, candles) : null,
+    [tradeSuggestionsEnabled, searchableZones, currentPrice, candles]
   );
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
   const approachingZone = useMemo(
-    () => (!tradePlan && currentPrice !== null ? findApproachingDemandZone(searchableZones, currentPrice, candles) : null),
-    [tradePlan, searchableZones, currentPrice, candles]
+    () =>
+      tradeSuggestionsEnabled && !tradePlan && currentPrice !== null
+        ? findApproachingDemandZone(searchableZones, currentPrice, candles)
+        : null,
+    [tradeSuggestionsEnabled, tradePlan, searchableZones, currentPrice, candles]
   );
   // Same trend-gate check buildTradePlan itself applies — see
   // OpportunityResult.approachingTrendReady's doc comment for the full
@@ -284,6 +301,7 @@ export default function AnalysisDashboard() {
               approachingZone={approachingZone}
               approachingTrendReady={approachingTrendReady}
               recentlyBrokenZone={recentlyBrokenZone}
+              tradeSuggestionsEnabled={tradeSuggestionsEnabled}
               tradeProgress={tradeProgress}
               confidence={confidence}
               technicalSummary={technicalSummary}

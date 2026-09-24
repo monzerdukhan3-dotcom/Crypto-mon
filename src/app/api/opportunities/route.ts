@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TIMEFRAMES } from "@/lib/constants";
+import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
 import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone, getTradePlanProgress } from "@/lib/tradePlan";
 import { detectTrend } from "@/lib/trend";
@@ -81,7 +81,11 @@ export async function GET(request: NextRequest) {
     // "entry" never disappears from this page while /history still shows
     // it as open (see detectSearchableZones' own doc comment).
     const zones = detectSearchableZones(candles, { higherTimeframeCandles: dailyCandles });
-    const tradePlan = buildTradePlan(zones, currentPrice, candles);
+    // 15m is excluded from new trade suggestions (see
+    // TRADE_SUGGESTION_TIMEFRAMES' own doc comment) — enforced here too,
+    // not just by OpportunitiesView omitting it from its own scan, so a
+    // direct request for this timeframe can't bypass the exclusion.
+    const tradePlan = TRADE_SUGGESTION_TIMEFRAMES.includes(tf) ? buildTradePlan(zones, currentPrice, candles) : null;
     // A plan that already reached one of its targets is still a genuinely
     // open position (see /history and the coin's own chart), but it's no
     // longer a fresh entry — this page lists setups that are still purely
@@ -93,9 +97,10 @@ export async function GET(request: NextRequest) {
     // all 76 coins at once with the same generous band buries the handful
     // of setups that are genuinely close under everything that's merely
     // somewhere in the neighborhood.
-    const approachingZone = !freshTradePlan
-      ? findApproachingDemandZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 })
-      : null;
+    const approachingZone =
+      !freshTradePlan && TRADE_SUGGESTION_TIMEFRAMES.includes(tf)
+        ? findApproachingDemandZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 })
+        : null;
     const brokenZone = findRecentlyBrokenZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 });
     const recentlyBrokenDemandZone = brokenZone?.type === "demand" ? brokenZone : null;
 

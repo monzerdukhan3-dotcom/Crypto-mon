@@ -53,6 +53,8 @@ interface ZonesSidebarProps {
    * this card is currently recommending, so the two are never conflated.
    */
   recentlyBrokenZone: Zone | null;
+  /** False on a timeframe excluded from new trade suggestions (see TRADE_SUGGESTION_TIMEFRAMES) — the chart/zones stay available either way. */
+  tradeSuggestionsEnabled: boolean;
   tradeProgress: TradeProgress | null;
   confidence: TradeConfidence | null;
   technicalSummary: string;
@@ -170,6 +172,7 @@ export default function ZonesSidebar({
   approachingZone,
   approachingTrendReady,
   recentlyBrokenZone,
+  tradeSuggestionsEnabled,
   tradeProgress,
   confidence,
   technicalSummary,
@@ -269,6 +272,11 @@ export default function ZonesSidebar({
               )}
               <Row icon={Crosshair} label="نقطة التعليق المقترحة" value={formatPrice(approachingZone.top)} />
             </>
+          ) : !tradeSuggestionsEnabled ? (
+            <EmptyState icon={Target}>
+              خطط الصفقات معطّلة على فريم 15 دقيقة (نسبة نجاح حقيقية ~43% فقط في السجل) — الشارت والمناطق أدناه
+              يبقيان متاحين لمتابعة الحركة فقط.
+            </EmptyState>
           ) : (
             <EmptyState icon={Target}>لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</EmptyState>
           )}
