@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 import { flushSync } from "react-dom";
 import type { SymbolInfo } from "@/lib/constants";
 
@@ -17,6 +17,9 @@ export default function SymbolSearchSelect({ symbols, value, onChange }: SymbolS
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Set by the touchend handler below, read by its onClick counterpart —
+  // see handleTouchEnd's own doc comment for why both exist.
+  const suppressNextClickRef = useRef(false);
 
   const selected = symbols.find((s) => s.symbol === value);
 
@@ -51,15 +54,40 @@ export default function SymbolSearchSelect({ symbols, value, onChange }: SymbolS
     // the parent (a new symbol means a new candle fetch and re-running
     // zone detection's own fairly heavy computation over the still-old
     // candles), so the dropdown's visual close waits on that entire
-    // render to finish. On a slower device that's a real, visible delay —
-    // the list looks stuck open for a beat even though the pick itself
-    // already registered (the newly selected symbol highights immediately
-    // since `value` updates in that same batched render).
+    // render to finish.
     flushSync(() => {
       setOpen(false);
       setQuery("");
     });
     onChange(symbol);
+  }
+
+  // Confirmed on a real device (screen recording): tapping an option inside
+  // this scrollable list on iOS Safari updates the selection (the trigger's
+  // label and the green highlight both change) but the list itself never
+  // closes — across several separate taps in the same recording, not a
+  // one-off. That points at Safari's own tap-vs-scroll disambiguation
+  // inside a scrolling `overflow-y` container occasionally never
+  // synthesizing the `click` this all depended on, even though the touch
+  // itself was clearly handled (hence the selection still landing).
+  // touchend fires unconditionally on every tap, before that
+  // disambiguation can swallow anything, so picking there — and
+  // preventDefault to stop the browser from *also* firing a click
+  // afterward — sidesteps it entirely. onClick stays as the mouse/keyboard
+  // path; suppressNextClickRef just stops a click that still slips through
+  // right after a touchend from picking a second time.
+  function handleTouchEnd(symbol: string, event: TouchEvent) {
+    event.preventDefault();
+    suppressNextClickRef.current = true;
+    setTimeout(() => {
+      suppressNextClickRef.current = false;
+    }, 500);
+    pick(symbol);
+  }
+
+  function handleClick(symbol: string) {
+    if (suppressNextClickRef.current) return;
+    pick(symbol);
   }
 
   return (
@@ -97,7 +125,8 @@ export default function SymbolSearchSelect({ symbols, value, onChange }: SymbolS
                 <li key={s.symbol}>
                   <button
                     type="button"
-                    onClick={() => pick(s.symbol)}
+                    onTouchEnd={(e) => handleTouchEnd(s.symbol, e)}
+                    onClick={() => handleClick(s.symbol)}
                     className={`flex w-full items-center px-3 py-2 text-sm transition-colors duration-150 hover:bg-background ${
                       s.symbol === value ? "font-medium text-success" : "text-foreground"
                     }`}
