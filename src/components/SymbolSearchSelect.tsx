@@ -2,6 +2,7 @@
 
 import { ChevronDown, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { SymbolInfo } from "@/lib/constants";
 
 interface SymbolSearchSelectProps {
@@ -44,9 +45,21 @@ export default function SymbolSearchSelect({ symbols, value, onChange }: SymbolS
   }
 
   function pick(symbol: string) {
+    // flushSync forces this dropdown's own close to commit and paint on
+    // its own, right now — before onChange runs. Without it, React
+    // batches setOpen(false) together with whatever onChange triggers in
+    // the parent (a new symbol means a new candle fetch and re-running
+    // zone detection's own fairly heavy computation over the still-old
+    // candles), so the dropdown's visual close waits on that entire
+    // render to finish. On a slower device that's a real, visible delay —
+    // the list looks stuck open for a beat even though the pick itself
+    // already registered (the newly selected symbol highights immediately
+    // since `value` updates in that same batched render).
+    flushSync(() => {
+      setOpen(false);
+      setQuery("");
+    });
     onChange(symbol);
-    setOpen(false);
-    setQuery("");
   }
 
   return (
