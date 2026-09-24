@@ -58,6 +58,14 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
         <div className="flex items-center gap-2">
           <span className="font-semibold text-foreground">{item.symbol}</span>
           <span className="text-xs text-muted">{timeframeLabel(item.timeframe)}</span>
+          {item.retestNumber !== null && item.retestNumber > 1 && (
+            <span
+              className="rounded-full bg-surface-border px-2 py-0.5 text-xs font-medium text-muted"
+              title="منطقة اختُبرت من قبل ونجحت — دخول جديد بثقة أقل"
+            >
+              إعادة اختبار #{item.retestNumber}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span
