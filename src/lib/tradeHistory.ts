@@ -34,26 +34,40 @@ export interface TradeRecord {
 /**
  * Re-evaluates a pending record against freshly fetched candles for its own
  * symbol+timeframe: walking forward from (and including) the candle it was
- * logged on, a candle whose low reaches the stop loss resolves it as
- * stopped out (checked before that candle's targets — the conservative
+ * logged on, a candle that *closes* at or below the stop loss resolves it
+ * as stopped out (checked before that candle's targets — the conservative
  * "worst case first" convention so a single wide candle can't overstate
  * the win rate); otherwise each target reached in turn raises the
  * highest-target-hit count. Only candles within the currently fetched
  * window are visible, so a record older than that window simply keeps its
  * last known state until re-checked with a wider window.
  *
+ * Close, not low: a stop-loss is only "real" the same way a zone's own
+ * break is (zones.ts' evaluateZoneRange uses `close`, not a wick, for
+ * exactly this reason) — a candle that wicks a hair through the stop and
+ * closes back above it hasn't actually invalidated the setup, it's the
+ * same kind of liquidity grab a zone shrugs off. Confirmed live
+ * (SAND/4h): a candle low of 0.03963 against a 0.039649 stop — a 0.00002
+ * wick — closed at 0.04016 and price went on to recover to 0.041,
+ * exactly the trade a wick-based check would have wrongly called a loss.
+ *
+ * This does NOT change what stopLoss itself means as a number: it's still
+ * the correct price to rest a real stop order at with an exchange, and a
+ * real stop-market/stop-limit order fills the instant price touches it,
+ * wick or not, regardless of how this backtest scores it after the fact.
+ * The gap between "a resting stop order would have executed here" and
+ * "this setup, watched rather than pre-placed, wasn't actually
+ * invalidated" is real; this function's job is the latter (was the setup
+ * itself still good), not a prediction of every possible order type.
+ *
  * Includes the entry candle itself deliberately: findEntryIndex only
  * requires that candle's *close* to be at or inside the zone, so a single
- * volatile candle can wick from above the zone all the way through it
- * and below the stop before closing back inside — entry (crossing
- * zoneTop) and the stop-loss level are hit within the same candle, entry
- * always first since price moves continuously and the stop sits further
- * below the zone than the entry itself. Starting the walk one candle
- * later missed this "instant stop-out" case entirely: with no later
- * candle also reaching the stop, the record could sit pending
- * indefinitely, or even resolve as a win off a later bounce — either way
- * silently skipping a loss that genuinely happened. Confirmed live: about
- * 1 in 6 real entries across a sample of major pairs has this shape.
+ * volatile candle can already close at or below the stop on the very
+ * candle that triggered entry. Starting the walk one candle later missed
+ * this "instant stop-out" case entirely: with no later candle also
+ * closing at the stop, the record could sit pending indefinitely, or even
+ * resolve as a win off a later bounce — either way silently skipping a
+ * loss that genuinely happened.
  */
 export function evaluateTradeOutcome(record: TradeRecord, candles: Candle[]): TradeRecord {
   if (record.resolved) return record;
@@ -65,7 +79,7 @@ export function evaluateTradeOutcome(record: TradeRecord, candles: Candle[]): Tr
   for (const c of candles) {
     if (c.time < record.loggedAt) continue;
 
-    if (c.low <= record.stopLoss) {
+    if (c.close <= record.stopLoss) {
       stoppedOut = true;
       resolvedAt = c.time;
       break;
