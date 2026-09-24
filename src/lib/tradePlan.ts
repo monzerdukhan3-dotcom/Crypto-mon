@@ -218,9 +218,23 @@ export function planFromZone(
     .sort((a, b) => a.bottom - b.bottom)
     .map((z) => z.bottom);
 
+  // A real supply zone is only used as a target when it sits within a sane
+  // distance of the risk-based level it's replacing. Without this cap, a
+  // handful of supply zones that all happen to sit far above entry (the
+  // nearest real resistance being, say, 15R away) get used as targets 1-3
+  // verbatim: every target clusters together right under that resistance
+  // instead of being spread across meaningfully distinct levels, and the
+  // whole stretch of real, closer progress in between goes unmarked — a
+  // plan can already be deep in profit and still read as barely started.
+  const SUPPLY_TARGET_CEILING_MULTIPLIER = 2;
+
   const targets: number[] = [];
   for (let i = 0; i < targetRMultiples.length; i++) {
-    const candidate = supplyTargetsAbove[i] ?? entry + riskAmount * targetRMultiples[i];
+    const fallback = entry + riskAmount * targetRMultiples[i];
+    const supplyCandidate = supplyTargetsAbove[i];
+    const maxAllowedDistance = riskAmount * targetRMultiples[i] * SUPPLY_TARGET_CEILING_MULTIPLIER;
+    const candidate =
+      supplyCandidate !== undefined && supplyCandidate - entry <= maxAllowedDistance ? supplyCandidate : fallback;
     const minAllowed = (i === 0 ? entry : targets[i - 1]) + riskAmount * 0.5;
     targets.push(Math.max(candidate, minAllowed));
   }
