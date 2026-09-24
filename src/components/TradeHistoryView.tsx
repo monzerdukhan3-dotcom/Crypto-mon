@@ -3,7 +3,7 @@
 import { CircleCheckBig, ChevronDown, Layers, Loader2, RefreshCw, Search, TrendingUp, XCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TIMEFRAMES, type Timeframe } from "@/lib/constants";
+import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import { readLocalCache, writeLocalCache } from "@/lib/localCache";
 import type { TradeRecord } from "@/lib/tradeHistory";
@@ -240,7 +240,8 @@ export default function TradeHistoryView() {
         return;
       }
 
-      const pairs = symbols.flatMap((s) => TIMEFRAMES.map((t) => ({ symbol: s.symbol, timeframe: t.value })));
+      // 15m excluded — see TRADE_SUGGESTION_TIMEFRAMES' own doc comment.
+      const pairs = symbols.flatMap((s) => TRADE_SUGGESTION_TIMEFRAMES.map((tf) => ({ symbol: s.symbol, timeframe: tf })));
       setProgress({ done: 0, total: pairs.length });
 
       const collected: TradeRecord[] = [];

@@ -1,4 +1,4 @@
-import { SUPPORTED_SYMBOLS, TIMEFRAMES } from "./constants";
+import { SUPPORTED_SYMBOLS, TRADE_SUGGESTION_TIMEFRAMES } from "./constants";
 import { getCandles } from "./marketData";
 import { backtestTradeHistory } from "./tradeBacktest";
 
@@ -20,15 +20,22 @@ export interface TrackRecordStats {
 
 /**
  * Aggregates backtestTradeHistory() across every SUPPORTED_SYMBOLS x
- * TIMEFRAMES combo into a single real performance summary — the same
- * deterministic, server-computed backtest /history uses per symbol, just
- * totaled up. Expensive (up to ~300 backtest runs), so both callers (the
- * public /api/track-record route and the /track-record page itself, which
- * calls this directly rather than round-tripping through its own API) set
- * their own `revalidate` to cache it rather than recomputing per visitor.
+ * TRADE_SUGGESTION_TIMEFRAMES combo into a single real performance summary
+ * — the same deterministic, server-computed backtest /history uses per
+ * symbol, just totaled up. 15m is excluded here too (2026-09-24, same as
+ * TRADE_SUGGESTION_TIMEFRAMES' own doc comment): once the site stopped
+ * suggesting new 15m trades for its poor real win rate, its old signals
+ * were removed from this public number as well rather than left dragging
+ * the aggregate down for a timeframe nobody can act on anymore. Expensive
+ * (up to ~230 backtest runs), so both callers (the public
+ * /api/track-record route and the /track-record page itself, which calls
+ * this directly rather than round-tripping through its own API) set their
+ * own `revalidate` to cache it rather than recomputing per visitor.
  */
 export async function computeTrackRecordStats(): Promise<TrackRecordStats> {
-  const pairs = SUPPORTED_SYMBOLS.flatMap((s) => TIMEFRAMES.map((t) => ({ symbol: s.symbol, timeframe: t.value })));
+  const pairs = SUPPORTED_SYMBOLS.flatMap((s) =>
+    TRADE_SUGGESTION_TIMEFRAMES.map((tf) => ({ symbol: s.symbol, timeframe: tf }))
+  );
 
   let totalSignals = 0;
   let resolvedSignals = 0;
@@ -81,6 +88,6 @@ export async function computeTrackRecordStats(): Promise<TrackRecordStats> {
     winRatePct: Number(winRatePct.toFixed(1)),
     averageRR: Number(averageRR.toFixed(2)),
     symbolsCovered: SUPPORTED_SYMBOLS.length,
-    timeframesCovered: TIMEFRAMES.length,
+    timeframesCovered: TRADE_SUGGESTION_TIMEFRAMES.length,
   };
 }

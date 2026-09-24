@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TIMEFRAMES } from "@/lib/constants";
+import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
 import { backtestTradeHistory } from "@/lib/tradeBacktest";
 import type { Timeframe } from "@/lib/constants";
@@ -30,6 +30,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const tf = timeframe as Timeframe;
+    // 15m's old signals were removed from the public record (see
+    // TRADE_SUGGESTION_TIMEFRAMES' own doc comment and computeTrackRecordStats')
+    // — enforced here too, not just by TradeHistoryView never requesting
+    // it, so a direct request for this timeframe can't bypass that.
+    if (!TRADE_SUGGESTION_TIMEFRAMES.includes(tf)) {
+      return NextResponse.json({ records: [] });
+    }
     const [candles, dailyCandles] = await Promise.all([
       getCandles(symbol, tf),
       // Same higher-timeframe confluence check the live dashboard applies —
