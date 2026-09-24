@@ -401,6 +401,16 @@ function findBreakTime(zone: Zone, candles: Candle[]): number | null {
  * (rather than the zone's own narrow formation box) so the rectangle
  * CandlestickChart draws stops right where price broke it, instead of
  * trailing on as if the level were still active.
+ *
+ * A price shelf can break once and then form a brand new, independently
+ * validated order block at practically the same range later on — merging
+ * only combines candidates formed close together in time, so an old break
+ * and a fresh active zone at the same price both legitimately exist as
+ * separate Zone objects. Surfacing the old break here anyway would tell
+ * the user to cancel a pending order at a level that's simultaneously
+ * being offered as a live entry — silently excluding it whenever an
+ * active zone of the same type already covers that price avoids that
+ * contradiction.
  */
 export function findRecentlyBrokenZone(
   zones: Zone[],
@@ -419,7 +429,16 @@ export function findRecentlyBrokenZone(
     return currentPrice > zone.top ? currentPrice - zone.top : zone.bottom - currentPrice;
   }
 
-  const candidates = zones.filter((z) => !z.active && distanceToPrice(z) <= maxDistance);
+  function overlaps(a: Zone, b: Zone): boolean {
+    return a.bottom <= b.top && a.top >= b.bottom;
+  }
+
+  const supersededByActiveZone = (z: Zone) =>
+    zones.some((other) => other.active && other.type === z.type && overlaps(other, z));
+
+  const candidates = zones.filter(
+    (z) => !z.active && distanceToPrice(z) <= maxDistance && !supersededByActiveZone(z)
+  );
   if (candidates.length === 0) return null;
 
   const nearest = candidates.reduce((closest, zone) =>
