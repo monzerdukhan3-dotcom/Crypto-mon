@@ -101,7 +101,13 @@ export async function GET(request: NextRequest) {
       !freshTradePlan && TRADE_SUGGESTION_TIMEFRAMES.includes(tf)
         ? findApproachingDemandZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 })
         : null;
-    const brokenZone = findRecentlyBrokenZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 });
+    // buildTradePlan is deliberately NOT gated on zone.active (see its own
+    // doc comment) — a position already entered stays open past its zone
+    // closing-broken. Excluded here whenever it's the same zone as the
+    // live plan (freshTradePlan or not — even one already at a target is
+    // still an open position, not a pending order to warn about).
+    const rawBrokenZone = findRecentlyBrokenZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 });
+    const brokenZone = rawBrokenZone && rawBrokenZone.id === tradePlan?.zone.id ? null : rawBrokenZone;
     const recentlyBrokenDemandZone = brokenZone?.type === "demand" ? brokenZone : null;
 
     const result: OpportunityResult = {

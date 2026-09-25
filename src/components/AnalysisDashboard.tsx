@@ -179,10 +179,20 @@ export default function AnalysisDashboard() {
   // it formed, so a box that was on the chart a moment ago doesn't just
   // vanish with no trace of why once price closes through it. Never feeds
   // into the trade plan itself — see findRecentlyBrokenZone's own doc comment.
-  const recentlyBrokenZone = useMemo(
+  //
+  // buildTradePlan is deliberately NOT gated on zone.active (see its own
+  // doc comment): a position already entered stays open past its zone
+  // closing-broken, since the real stop sits a buffer below the zone's raw
+  // bottom. That means the zone driving the live trade plan shown right
+  // below this can itself be the "recently broken" one — excluded here so
+  // it doesn't also tell the user to cancel a pending order on a zone
+  // they've already entered and are actively tracking.
+  const rawRecentlyBrokenZone = useMemo(
     () => (currentPrice !== null ? findRecentlyBrokenZone(searchableZones, currentPrice, candles) : null),
     [searchableZones, currentPrice, candles]
   );
+  const recentlyBrokenZone =
+    rawRecentlyBrokenZone && rawRecentlyBrokenZone.id === tradePlan?.zone.id ? null : rawRecentlyBrokenZone;
   const confidence = useMemo(
     () => (tradePlan ? scoreTradeConfidence(tradePlan, searchableZones, candles, dailyCandles) : null),
     [tradePlan, searchableZones, candles, dailyCandles]
