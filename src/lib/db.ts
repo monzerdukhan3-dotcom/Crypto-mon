@@ -43,6 +43,36 @@ export async function ensureUsersTable(): Promise<void> {
 }
 
 /**
+ * One row per distinct trade setup (symbol+timeframe+zone+retest) the site
+ * has ever shown to a visitor, written the first time backtestTradeHistory
+ * or the live opportunities/dashboard computation encounters it and never
+ * touched again afterward — see tradeLedger.ts' own doc comment for why:
+ * entry/stop_loss/targets/risk_reward_ratios/confidence_score/zone all
+ * describe the setup as it looked at that first sighting and must stay
+ * fixed, matching what a real visitor actually saw, rather than drifting
+ * on every later recompute as the live zone map keeps changing.
+ */
+export async function ensureTradePlansTable(): Promise<void> {
+  const db = sql();
+  await db`
+    create table if not exists trade_plans (
+      id text primary key,
+      symbol text not null,
+      timeframe text not null,
+      retest_number integer not null,
+      logged_at bigint not null,
+      entry double precision not null,
+      stop_loss double precision not null,
+      targets jsonb not null,
+      risk_reward_ratios jsonb not null,
+      confidence_score integer not null,
+      zone jsonb not null,
+      created_at timestamptz not null default now()
+    )
+  `;
+}
+
+/**
  * If ADMIN_EMAIL and ADMIN_PASSWORD are set, makes sure that account exists
  * as an admin — the way the very first owner account gets created on a
  * fresh database, since /signup only ever creates trial accounts and /admin
@@ -72,7 +102,7 @@ let schemaReady: Promise<void> | null = null;
  */
 export function ensureSchema(): Promise<void> {
   if (!schemaReady) {
-    schemaReady = ensureUsersTable()
+    schemaReady = Promise.all([ensureUsersTable(), ensureTradePlansTable()])
       .then(ensureBootstrapAdmin)
       .catch((error) => {
         schemaReady = null;

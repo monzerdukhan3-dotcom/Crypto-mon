@@ -52,7 +52,7 @@ export async function computeTrackRecordStats(): Promise<TrackRecordStats> {
           getCandles(symbol, timeframe),
           timeframe === "1d" ? Promise.resolve(null) : getCandles(symbol, "1d").catch(() => null),
         ]);
-        const records = backtestTradeHistory(symbol, timeframe, candles, dailyCandles);
+        const records = await backtestTradeHistory(symbol, timeframe, candles, dailyCandles);
         for (const record of records) {
           totalSignals++;
           if (!record.resolved) continue;
