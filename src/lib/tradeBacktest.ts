@@ -4,7 +4,7 @@ import { evaluateTradeOutcome, type TradeRecord } from "./tradeHistory";
 import { scoreTradeConfidence } from "./tradeConfidence";
 import { detectTrend } from "./trend";
 import type { Candle } from "./types";
-import { detectZoneHistory } from "./zones";
+import { detectZoneHistory, detectSearchableZones } from "./zones";
 
 /**
  * 2026-09-20T11:21:37Z — when the trade history switched from a per-browser
@@ -87,10 +87,24 @@ export function backtestTradeHistory(
       // candle — the trend can genuinely differ between a zone's 1st and
       // 2nd retest, so each is checked independently, not inherited from
       // the first.
-      const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
+      const candlesAtEntry = candles.slice(0, entryIndex + 1);
+      const trendAtEntry = detectTrend(candlesAtEntry);
       if (trendAtEntry === "down" && !zone.htfOverlap) continue;
 
-      const basePlan = planFromZone(zone, zones);
+      // Target selection (planFromZone's supplyTargetsAbove) picks the
+      // nearest *currently active* supply zones — but `zones` here is
+      // detectZoneHistory's full-history map, re-derived from whichever
+      // candles happen to be the latest fetch, so a supply zone's active
+      // status keeps changing as new candles arrive long after this trade
+      // already resolved. Left as `zones`, a resolved trade's own recorded
+      // targets would silently drift on every future page load — the
+      // exact "why did this trade's targets and stop change after it hit
+      // stop loss" mismatch a live check against real data (SAND/1h)
+      // confirmed. Using only the zone map as it stood as of the entry
+      // candle keeps a resolved trade's targets fixed forever, the same
+      // no-look-ahead treatment scoreTradeConfidence below already gets.
+      const zonesAsOfEntry = detectSearchableZones(candlesAtEntry);
+      const basePlan = planFromZone(zone, zonesAsOfEntry);
       if (!basePlan) continue;
 
       const preliminary: TradeRecord = {
@@ -118,14 +132,13 @@ export function backtestTradeHistory(
       if (resolved.resolved && resolved.resolvedAt !== null && resolved.resolvedAt < HISTORY_START_TIME) continue;
 
       // Scored from only what was known as of the entry candle, not the
-      // full (future-including) series, so the reversal-pattern check
-      // can't peek ahead.
-      const confidence = scoreTradeConfidence(
-        { ...basePlan, retestNumber },
-        zones,
-        candles.slice(0, entryIndex + 1),
-        null
-      );
+      // full (future-including) series — the candles argument already got
+      // this treatment, but scoreTradeConfidence's confluence/distance
+      // points also read its `zones` argument's own `active` status, which
+      // has the identical drift problem planFromZone's target selection
+      // had above if given the current-time `zones` here instead of
+      // zonesAsOfEntry.
+      const confidence = scoreTradeConfidence({ ...basePlan, retestNumber }, zonesAsOfEntry, candlesAtEntry, null);
 
       records.push({ ...resolved, confidenceScore: confidence.score });
     }

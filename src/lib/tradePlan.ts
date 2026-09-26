@@ -1,6 +1,7 @@
 import { calculateATR } from "./indicators";
 import { detectTrend } from "./trend";
 import type { Candle, TradePlan, Zone } from "./types";
+import { detectSearchableZones } from "./zones";
 
 /**
  * How many of a plan's targets have actually been reached since entry,
@@ -313,10 +314,20 @@ export function buildTradePlan(
       // even against the entry-timeframe trend. A sideways trend is let
       // through too: still a real bounce off a real level, just without a
       // clear trend either way.
-      const trendAtEntry = detectTrend(candles.slice(0, entryIndex + 1));
+      const candlesAtEntry = candles.slice(0, entryIndex + 1);
+      const trendAtEntry = detectTrend(candlesAtEntry);
       if (trendAtEntry === "down" && !zone.htfOverlap) continue;
 
-      const basePlan = planFromZone(zone, zones, options);
+      // Target selection (planFromZone's supplyTargetsAbove) picks the
+      // nearest currently-active supply zones — using the live `zones`
+      // here would let an already-entered position's own targets silently
+      // shift on every later poll as fresh candles change which supply
+      // zones are active, even though a real trader's limit-sell orders
+      // were placed once at entry and don't move themselves afterward.
+      // Same fix, and the same live-data confirmation (SAND/1h), as
+      // backtestTradeHistory's identical use of planFromZone.
+      const zonesAsOfEntry = detectSearchableZones(candlesAtEntry);
+      const basePlan = planFromZone(zone, zonesAsOfEntry, options);
       if (!basePlan) continue;
 
       if (!isEntryStillOpen(basePlan.stopLoss, basePlan.targets, candles[entryIndex].time, candles)) continue;
