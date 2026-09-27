@@ -138,13 +138,16 @@ export function planFromZone(
  * too little reward). Close enough to be worth flagging so a limit
  * buy order can be queued at the zone's top ahead of the return.
  */
+/** How far below price (in ATRs) a zone is still flagged — shared by every page so they flag the same zones. */
+export const WATCH_DISTANCE_ATR_RATIO = 3;
+
 export function findApproachingDemandZone(
   zones: Zone[],
   currentPrice: number,
   candles: Candle[],
-  options: { watchDistanceAtrRatio?: number } = {}
+  excludeZoneId: string | null = null
 ): Zone | null {
-  const { watchDistanceAtrRatio = 6 } = options;
+  const watchDistanceAtrRatio = WATCH_DISTANCE_ATR_RATIO;
 
   const referenceAtr = latestAtr(candles);
   if (referenceAtr === null) return null;
@@ -152,7 +155,12 @@ export function findApproachingDemandZone(
 
   const candidates = zones.filter((z) => {
     if (z.type !== "demand" || !z.active || currentPrice < z.bottom) return false;
-    return currentPrice - z.top <= maxDistance;
+    if (excludeZoneId !== null && z.id === excludeZoneId) return false;
+    if (currentPrice - z.top > maxDistance) return false;
+    // Only a zone a touch could actually trade: confirmed by a breakout
+    // close above it, and not yet used for all MAX_ZONE_ENTRIES entries.
+    const confirmed = candles.some((c) => c.time >= z.endTime && c.close > z.top);
+    return confirmed && findEntryIndices(candles, z.endTime, z.top, z.bottom).length < MAX_ZONE_ENTRIES;
   });
   if (candidates.length === 0) return null;
 
@@ -216,14 +224,11 @@ const RECENT_BREAK_LOOKBACK_CANDLES = 60;
 export function findRecentlyBrokenZone(
   zones: Zone[],
   currentPrice: number,
-  candles: Candle[],
-  options: { watchDistanceAtrRatio?: number } = {}
+  candles: Candle[]
 ): Zone | null {
-  const { watchDistanceAtrRatio = 6 } = options;
-
   const referenceAtr = latestAtr(candles);
   if (referenceAtr === null) return null;
-  const maxDistance = referenceAtr * watchDistanceAtrRatio;
+  const maxDistance = referenceAtr * WATCH_DISTANCE_ATR_RATIO;
 
   function distanceToPrice(zone: Zone): number {
     if (currentPrice >= zone.bottom && currentPrice <= zone.top) return 0;

@@ -276,18 +276,19 @@ export default function ZonesSidebar({
                 />
               ))}
             </>
-          ) : approachingZone ? (
+          ) : null}
+          {approachingZone && (
             <>
               {currentPrice <= approachingZone.top ? (
                 <Note tone="info" icon={Bell}>
                   السعر داخل منطقة الطلب {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)} الآن
-                  لكن لم تُفتح صفقة — شروط الدخول غير مستوفاة عند لمسها (الاتجاه، أو استُهلكت مرات الدخول الثلاث، أو
-                  لم تتأكد المنطقة بعد، أو نسبة العائد أقل من المطلوب).
+                  لكن لم تُفتح عليها صفقة — شروط الدخول لم تكن مستوفاة لحظة لمسها (الاتجاه هابط، أو لم تكن المنطقة مؤكَّدة قبل اللمس، أو نسبة العائد أقل من
+                  المطلوب).
                 </Note>
               ) : (
                 <Note tone="info" icon={Bell}>
-                  السعر يقترب من منطقة طلب عند {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)}
-                  — جهّز أمر شراء معلّق عندها.
+                  {tradePlan ? "منطقة طلب جديدة: " : ""}السعر يقترب من منطقة طلب عند{" "}
+                  {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)} — جهّز أمر شراء معلّق عندها.
                 </Note>
               )}
               {!approachingTrendReady && (
@@ -297,13 +298,14 @@ export default function ZonesSidebar({
               )}
               <Row icon={Crosshair} label="نقطة التعليق المقترحة" value={formatPrice(approachingZone.top)} />
             </>
-          ) : !tradeSuggestionsEnabled ? (
+          )}
+          {!tradePlan && !approachingZone && (!tradeSuggestionsEnabled ? (
             <EmptyState icon={Target}>
               خطط الصفقات معطّلة على فريم 15 دقيقة — الشارت والمناطق أدناه يبقيان متاحين لمتابعة الحركة فقط.
             </EmptyState>
           ) : (
             <EmptyState icon={Target}>لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</EmptyState>
-          )}
+          ))}
         </div>
       </Card>
 

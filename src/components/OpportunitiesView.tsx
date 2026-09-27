@@ -76,7 +76,7 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
             {isEntry
               ? "صفقة مفتوحة"
               : item.insideZone
-                ? "داخل المنطقة — الشروط غير مستوفاة"
+                ? "داخل المنطقة — لم تُفتح صفقة"
                 : `يقترب (${Math.abs(item.distancePct ?? 0).toFixed(1)}%)`}
           </span>
           <Link
