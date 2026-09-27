@@ -2,6 +2,7 @@ import type { Timeframe } from "./constants";
 import { findEntryIndices, planFromZone } from "./tradePlan";
 import { evaluateTradeOutcome, type TradeRecord } from "./tradeHistory";
 import { scoreTradeConfidence } from "./tradeConfidence";
+import { freezeTradePlans, type TradePlanCandidate } from "./tradeLedger";
 import { detectTrend } from "./trend";
 import type { Candle } from "./types";
 import { detectZoneHistory, detectSearchableZones } from "./zones";
@@ -20,20 +21,18 @@ const HISTORY_START_TIME = 1789903297;
 
 /**
  * Replays this symbol+timeframe's own candle history to reconstruct every
- * trade the site would have proposed, deterministically — no stored state
- * needed, since it's rebuilt fresh from the same public candles everyone
- * sees. For every demand zone that ever validly formed (detectZoneHistory,
- * broken or not), finds every distinct candle after formation that
- * genuinely returns to (or inside) the zone's top — up to MAX_ZONE_ENTRIES
- * of them, the same "3 retests while it stays unbroken" rule buildTradePlan
- * applies live (see findEntryIndices) — and treats each one as its own
- * entry, resolved forward exactly like evaluateTradeOutcome does for a
- * live-logged record: stop loss takes priority over targets on whichever
- * candle hits first. A zone that's tested and held once can go on to
- * produce a second and third record this way, each with its own
- * retestNumber and a lower confidence score (scoreTradeConfidence's own
- * retestPenalty) — still a real, tradable setup, just less fresh than the
- * original.
+ * trade the site would have proposed. For every demand zone that ever
+ * validly formed (detectZoneHistory, broken or not), finds every distinct
+ * candle after formation that genuinely returns to (or inside) the zone's
+ * top — up to MAX_ZONE_ENTRIES of them, the same "3 retests while it stays
+ * unbroken" rule buildTradePlan applies live (see findEntryIndices) — and
+ * treats each one as its own entry, resolved forward exactly like
+ * evaluateTradeOutcome does for a live-logged record: stop loss takes
+ * priority over targets on whichever candle hits first. A zone that's
+ * tested and held once can go on to produce a second and third record this
+ * way, each with its own retestNumber and a lower confidence score
+ * (scoreTradeConfidence's own retestPenalty) — still a real, tradable
+ * setup, just less fresh than the original.
  *
  * Deliberately NOT filtered against detectZones' live cap (the top few
  * zones the chart actually draws right now): that cap exists purely to
@@ -52,20 +51,36 @@ const HISTORY_START_TIME = 1789903297;
  * genuine signal until it resolves, is the correct shape for these two
  * views to differ in, not a bug to paper over.
  *
- * Because this always re-derives from the full 200-candle window, the
- * result is identical for every visitor and every browser — there's
- * nothing local or per-user about it.
+ * Every setup's own definition (entry/stopLoss/targets/riskRewardRatios/
+ * confidenceScore/zone) is frozen via tradeLedger.ts the first time it's
+ * ever encountered — see freezeTradePlans' own doc comment for why a
+ * freshly recomputed value can't just be used directly even after the
+ * no-look-ahead fix below: two independent requests (this one, the live
+ * dashboard) each re-fetch candles at slightly different moments and can
+ * derive a slightly different "zone map as of entry," so only a genuinely
+ * *stored* value stays byte-identical to what a visitor actually saw.
+ * Only the *outcome* (highestTargetHit/stoppedOut/resolved) is still
+ * evaluated fresh against today's candles every time — that's supposed to
+ * change as real price action unfolds, unlike the setup's own definition.
  */
-export function backtestTradeHistory(
+export async function backtestTradeHistory(
   symbol: string,
   timeframe: Timeframe,
   candles: Candle[],
   dailyCandles: Candle[] | null = null
-): TradeRecord[] {
+): Promise<TradeRecord[]> {
   if (candles.length === 0) return [];
 
   const zones = detectZoneHistory(candles, { higherTimeframeCandles: dailyCandles });
-  const records: TradeRecord[] = [];
+
+  interface PendingEntry {
+    id: string;
+    retestNumber: number;
+    entryIndex: number;
+  }
+
+  const candidates: TradePlanCandidate[] = [];
+  const pending: PendingEntry[] = [];
 
   for (const zone of zones) {
     if (zone.type !== "demand") continue;
@@ -91,57 +106,66 @@ export function backtestTradeHistory(
       const trendAtEntry = detectTrend(candlesAtEntry);
       if (trendAtEntry === "down" && !zone.htfOverlap) continue;
 
-      // Target selection (planFromZone's supplyTargetsAbove) picks the
-      // nearest *currently active* supply zones — but `zones` here is
-      // detectZoneHistory's full-history map, re-derived from whichever
-      // candles happen to be the latest fetch, so a supply zone's active
-      // status keeps changing as new candles arrive long after this trade
-      // already resolved. Left as `zones`, a resolved trade's own recorded
-      // targets would silently drift on every future page load — the
-      // exact "why did this trade's targets and stop change after it hit
-      // stop loss" mismatch a live check against real data (SAND/1h)
-      // confirmed. Using only the zone map as it stood as of the entry
-      // candle keeps a resolved trade's targets fixed forever, the same
-      // no-look-ahead treatment scoreTradeConfidence below already gets.
+      // No-look-ahead target/confidence selection: see this function's own
+      // doc comment and freezeTradePlans' — only candles up to and
+      // including the entry candle are visible here, not the full
+      // (future-including) series.
       const zonesAsOfEntry = detectSearchableZones(candlesAtEntry);
       const basePlan = planFromZone(zone, zonesAsOfEntry);
       if (!basePlan) continue;
 
-      const preliminary: TradeRecord = {
-        id: `${symbol}:${timeframe}:${zone.id}:${retestNumber}`,
+      const confidence = scoreTradeConfidence({ ...basePlan, retestNumber }, zonesAsOfEntry, candlesAtEntry, null);
+
+      const id = `${symbol}:${timeframe}:${zone.id}:${retestNumber}`;
+      candidates.push({
+        id,
         symbol,
         timeframe,
+        retestNumber,
         loggedAt: candles[entryIndex].time,
         entry: basePlan.entry,
         stopLoss: basePlan.stopLoss,
         targets: basePlan.targets,
         riskRewardRatios: basePlan.riskRewardRatios,
+        confidenceScore: confidence.score,
         zone: zoneWithoutPivot,
-        retestNumber,
-        confidenceScore: 0,
-        highestTargetHit: 0,
-        stoppedOut: false,
-        resolved: false,
-        resolvedAt: null,
-      };
-
-      const resolved = evaluateTradeOutcome(preliminary, candles);
-      // See HISTORY_START_TIME above: only a fully-resolved-before-launch
-      // trade is fabricated history — a still-open one is exactly what
-      // today's opportunities scan would also be showing.
-      if (resolved.resolved && resolved.resolvedAt !== null && resolved.resolvedAt < HISTORY_START_TIME) continue;
-
-      // Scored from only what was known as of the entry candle, not the
-      // full (future-including) series — the candles argument already got
-      // this treatment, but scoreTradeConfidence's confluence/distance
-      // points also read its `zones` argument's own `active` status, which
-      // has the identical drift problem planFromZone's target selection
-      // had above if given the current-time `zones` here instead of
-      // zonesAsOfEntry.
-      const confidence = scoreTradeConfidence({ ...basePlan, retestNumber }, zonesAsOfEntry, candlesAtEntry, null);
-
-      records.push({ ...resolved, confidenceScore: confidence.score });
+      });
+      pending.push({ id, retestNumber, entryIndex });
     }
+  }
+
+  const frozen = await freezeTradePlans(candidates);
+
+  const records: TradeRecord[] = [];
+  for (const p of pending) {
+    const fields = frozen.get(p.id);
+    if (!fields) continue;
+
+    const preliminary: TradeRecord = {
+      id: p.id,
+      symbol,
+      timeframe,
+      loggedAt: candles[p.entryIndex].time,
+      entry: fields.entry,
+      stopLoss: fields.stopLoss,
+      targets: fields.targets,
+      riskRewardRatios: fields.riskRewardRatios,
+      zone: fields.zone,
+      retestNumber: p.retestNumber,
+      confidenceScore: fields.confidenceScore,
+      highestTargetHit: 0,
+      stoppedOut: false,
+      resolved: false,
+      resolvedAt: null,
+    };
+
+    const resolved = evaluateTradeOutcome(preliminary, candles);
+    // See HISTORY_START_TIME above: only a fully-resolved-before-launch
+    // trade is fabricated history — a still-open one is exactly what
+    // today's opportunities scan would also be showing.
+    if (resolved.resolved && resolved.resolvedAt !== null && resolved.resolvedAt < HISTORY_START_TIME) continue;
+
+    records.push(resolved);
   }
 
   return records;

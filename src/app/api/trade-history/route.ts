@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       // skipped when already on the daily chart, and not fatal if it fails.
       tf === "1d" ? Promise.resolve(null) : getCandles(symbol, "1d").catch(() => null),
     ]);
-    const records = backtestTradeHistory(symbol, tf, candles, dailyCandles);
+    const records = await backtestTradeHistory(symbol, tf, candles, dailyCandles);
     return NextResponse.json({ records });
   } catch (error) {
     return NextResponse.json(

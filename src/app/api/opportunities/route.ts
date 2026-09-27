@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
 import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone, getTradePlanProgress } from "@/lib/tradePlan";
+import { freezeLiveTradePlan } from "@/lib/tradeLedger";
 import { detectTrend } from "@/lib/trend";
 import { detectSearchableZones } from "@/lib/zones";
 import type { Timeframe } from "@/lib/constants";
@@ -85,7 +86,20 @@ export async function GET(request: NextRequest) {
     // TRADE_SUGGESTION_TIMEFRAMES' own doc comment) — enforced here too,
     // not just by OpportunitiesView omitting it from its own scan, so a
     // direct request for this timeframe can't bypass the exclusion.
-    const tradePlan = TRADE_SUGGESTION_TIMEFRAMES.includes(tf) ? buildTradePlan(zones, currentPrice, candles) : null;
+    const rawTradePlan = TRADE_SUGGESTION_TIMEFRAMES.includes(tf) ? buildTradePlan(zones, currentPrice, candles) : null;
+    // Freeze this setup's own definition (entry/stopLoss/targets/
+    // riskRewardRatios/zone) the same way backtestTradeHistory does — see
+    // freezeLiveTradePlan's own doc comment. Without this, a setup first
+    // seen here (before /history or /track-record ever swept this pair)
+    // would show whatever buildTradePlan just freshly computed, which could
+    // then permanently differ from the frozen value /history logs the next
+    // time it's checked, for the identical reason planFromZone's own
+    // no-look-ahead fix doesn't fully solve on its own: two independent
+    // requests re-derive "the zone map as of entry" from whichever candle
+    // window Binance happens to hand back at that exact moment.
+    const tradePlan = rawTradePlan
+      ? (await freezeLiveTradePlan(rawTradePlan, candles, symbol, tf)).tradePlan
+      : null;
     // A plan that already reached one of its targets is still a genuinely
     // open position (see /history and the coin's own chart), but it's no
     // longer a fresh entry — this page lists setups that are still purely

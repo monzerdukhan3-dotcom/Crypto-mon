@@ -13,10 +13,10 @@ import {
 } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
-import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
+import { findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
 import { detectTrend } from "@/lib/trend";
-import type { Candle, Zone } from "@/lib/types";
+import type { Candle, TradePlan, Zone } from "@/lib/types";
 import { checkVolatility } from "@/lib/volatility";
 import { detectSearchableZones, detectZones } from "@/lib/zones";
 import CandlestickChart from "./CandlestickChart";
@@ -27,6 +27,8 @@ interface FetchResult {
   key: string;
   candles: Candle[];
   dailyCandles: Candle[] | null;
+  tradePlan: TradePlan | null;
+  confidenceScore: number | null;
   error: string | null;
 }
 
@@ -44,6 +46,24 @@ async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Can
     throw new Error(json.error ?? "فشل تحميل البيانات");
   }
   return json.candles as Candle[];
+}
+
+// The frozen trade plan (see /api/trade-plan's own doc comment on why this
+// is a server round-trip rather than the plain buildTradePlan() call this
+// used to make directly): entry/stopLoss/targets/zone are whatever's
+// actually stored in the ledger for this setup, not a fresh recompute that
+// could permanently disagree with what /history later logs for the same
+// trade.
+async function fetchTradePlan(
+  symbol: string,
+  timeframe: Timeframe
+): Promise<{ tradePlan: TradePlan | null; confidenceScore: number | null }> {
+  const res = await fetch(`/api/trade-plan?symbol=${symbol}&timeframe=${timeframe}`);
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(json.error ?? "فشل تحميل خطة الصفقة");
+  }
+  return { tradePlan: json.tradePlan ?? null, confidenceScore: json.confidenceScore ?? null };
 }
 
 export default function AnalysisDashboard() {
@@ -88,10 +108,20 @@ export default function AnalysisDashboard() {
         // already viewing the daily chart, and don't let it fail the whole
         // request if it errors — it's a confirmation signal, not core data.
         timeframe === "1d" ? Promise.resolve(null) : fetchCandleSet(symbol, "1d").catch(() => null),
+        // Not fatal on its own either — a failed trade-plan lookup still
+        // leaves the chart and zones themselves fully usable.
+        fetchTradePlan(symbol, timeframe).catch(() => ({ tradePlan: null, confidenceScore: null })),
       ])
-        .then(([candles, dailyCandles]) => {
+        .then(([candles, dailyCandles, tradePlanResult]) => {
           if (cancelled) return;
-          setResult({ key: requestKey, candles, dailyCandles, error: null });
+          setResult({
+            key: requestKey,
+            candles,
+            dailyCandles,
+            tradePlan: tradePlanResult.tradePlan,
+            confidenceScore: tradePlanResult.confidenceScore,
+            error: null,
+          });
         })
         .catch((error: unknown) => {
           if (cancelled) return;
@@ -99,6 +129,8 @@ export default function AnalysisDashboard() {
             key: requestKey,
             candles: [],
             dailyCandles: null,
+            tradePlan: null,
+            confidenceScore: null,
             error: error instanceof Error ? error.message : "فشل تحميل البيانات",
           });
         });
@@ -154,11 +186,13 @@ export default function AnalysisDashboard() {
   // (detectZones/detectSearchableZones above) stay fully available on
   // 15m regardless, only the plan/approaching-zone suggestions gate on it.
   const tradeSuggestionsEnabled = TRADE_SUGGESTION_TIMEFRAMES.includes(timeframe);
-  const tradePlan = useMemo(
-    () =>
-      tradeSuggestionsEnabled && currentPrice !== null ? buildTradePlan(searchableZones, currentPrice, candles) : null,
-    [tradeSuggestionsEnabled, searchableZones, currentPrice, candles]
-  );
+  // Fetched from /api/trade-plan rather than computed locally — see that
+  // route's own doc comment: entry/stopLoss/targets/zone need to be
+  // whatever's frozen in the ledger for this exact setup, not a fresh
+  // recompute that could permanently disagree with what /history later
+  // logs for the identical trade.
+  const tradePlan = status === "ready" ? (result?.tradePlan ?? null) : null;
+  const frozenConfidenceScore = status === "ready" ? (result?.confidenceScore ?? null) : null;
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
   const approachingZone = useMemo(
@@ -193,10 +227,18 @@ export default function AnalysisDashboard() {
   );
   const recentlyBrokenZone =
     rawRecentlyBrokenZone && rawRecentlyBrokenZone.id === tradePlan?.zone.id ? null : rawRecentlyBrokenZone;
-  const confidence = useMemo(
-    () => (tradePlan ? scoreTradeConfidence(tradePlan, searchableZones, candles, dailyCandles) : null),
-    [tradePlan, searchableZones, candles, dailyCandles]
-  );
+  // The breakdown (reversal pattern / MTF conflict badges) is still scored
+  // live against today's zones/candles — those describe the market right
+  // now, not the frozen setup itself — but the headline score shown is
+  // overridden by frozenConfidenceScore below so it matches /history's own
+  // confidenceScore for this exact trade exactly, instead of whatever this
+  // local recompute (using today's zone map against the frozen entry
+  // price) happens to land on.
+  const confidence = useMemo(() => {
+    if (!tradePlan) return null;
+    const live = scoreTradeConfidence(tradePlan, searchableZones, candles, dailyCandles);
+    return frozenConfidenceScore !== null ? { ...live, score: frozenConfidenceScore } : live;
+  }, [tradePlan, searchableZones, candles, dailyCandles, frozenConfidenceScore]);
   const technicalSummary = useMemo(
     () => (currentPrice !== null ? generateTechnicalSummary(candles, zones, currentPrice) : ""),
     [candles, zones, currentPrice]
