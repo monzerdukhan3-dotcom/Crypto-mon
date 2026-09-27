@@ -166,6 +166,40 @@ export async function freezeTradePlans(
 }
 
 /**
+ * A single id's stored row, if any — no entry-candle re-derivation needed
+ * at all, unlike freezeTradePlans' insert path. freezeLiveTradePlan checks
+ * this *before* attempting to relocate today's entry candle, specifically
+ * so an already-frozen trade never depends on that relocation succeeding.
+ * Never throws — a lookup failure here is treated the same as "not frozen
+ * yet" by the caller.
+ */
+async function lookupFrozenTradePlan(id: string): Promise<FrozenTradePlanFields | null> {
+  try {
+    await ensureSchema();
+    const db = sql();
+    const rows = (await db`
+      select entry, stop_loss, targets, risk_reward_ratios, confidence_score, zone, logged_at
+      from trade_plans
+      where id = ${id}
+      limit 1
+    `) as TradePlanRow[];
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    return {
+      entry: Number(row.entry),
+      stopLoss: Number(row.stop_loss),
+      targets: row.targets,
+      riskRewardRatios: row.risk_reward_ratios,
+      confidenceScore: row.confidence_score,
+      zone: row.zone,
+      loggedAt: Number(row.logged_at),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Freezes a single live-computed TradePlan (see freezeTradePlans' own doc
  * comment) and returns it with entry/stopLoss/targets/riskRewardRatios/zone
  * overwritten by whatever's actually stored — the shared helper both the
@@ -179,6 +213,36 @@ export async function freezeLiveTradePlan(
   symbol: string,
   timeframe: string
 ): Promise<{ tradePlan: TradePlan; confidenceScore: number; loggedAt: number }> {
+  const id = `${symbol}:${timeframe}:${tradePlan.zone.id}:${tradePlan.retestNumber}`;
+
+  // Check the ledger *before* trying to relocate this entry's own position
+  // in today's candles — a retest past the first can fail that relocation
+  // (findEntryIndices replaying the whole "left, then came back" sequence
+  // against a candle window that's drifted since) even for a trade that
+  // was already frozen correctly the first time it was seen. Falling
+  // through to the fallback below in that case would silently discard the
+  // real loggedAt for a "now" placeholder — confirmed directly against a
+  // real pending record (APT/4h retest #2): its chart box collapsed to
+  // zero width (startTime ≈ endTime ≈ "now"), rendering nothing at all,
+  // not even the Entry line, exactly the "the trade wasn't fixed" report.
+  const existing = await lookupFrozenTradePlan(id);
+  if (existing) {
+    return {
+      tradePlan: {
+        ...tradePlan,
+        entry: existing.entry,
+        stopLoss: existing.stopLoss,
+        targets: existing.targets,
+        riskRewardRatios: existing.riskRewardRatios,
+        zone: existing.zone,
+      },
+      confidenceScore: existing.confidenceScore,
+      loggedAt: existing.loggedAt,
+    };
+  }
+
+  // Not frozen yet — a genuinely new setup, so its entry candle needs
+  // locating once to log it for the first time.
   const entryIndices = findEntryIndices(candles, tradePlan.zone.endTime, tradePlan.zone.top, tradePlan.zone.bottom);
   const entryIndex = entryIndices[tradePlan.retestNumber - 1];
   if (entryIndex === undefined) {
@@ -191,7 +255,6 @@ export async function freezeLiveTradePlan(
   const candlesAtEntry = candles.slice(0, entryIndex + 1);
   const zonesAsOfEntry = detectSearchableZones(candlesAtEntry);
   const confidence = scoreTradeConfidence(tradePlan, zonesAsOfEntry, candlesAtEntry, null);
-  const id = `${symbol}:${timeframe}:${tradePlan.zone.id}:${tradePlan.retestNumber}`;
 
   const frozen = await freezeTradePlans([
     {
