@@ -1,7 +1,7 @@
 "use client";
 
 import { BarChart2, Eraser, Maximize2, Minimize2, Minus, Ruler, Slash, TrendingUp, Timer, Waves } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   ColorType,
@@ -17,8 +17,7 @@ import {
 import { TIMEFRAME_SECONDS, type Timeframe } from "@/lib/constants";
 import type { Drawing, DrawingTool } from "@/lib/drawingTypes";
 import { calculateEMA, calculateMACD, calculateRSI } from "@/lib/indicators";
-import { computeTradePlanSpan } from "@/lib/tradePlan";
-import type { Candle, TradePlan, Zone } from "@/lib/types";
+import type { Candle, Zone } from "@/lib/types";
 import { ManualDrawingPrimitive } from "./ManualDrawingPrimitive";
 import { MeasurePrimitive, type MeasurePoint } from "./MeasurePrimitive";
 import { TradePlanBoxPrimitive, type TradePlanBox } from "./TradePlanBoxPrimitive";
@@ -37,12 +36,13 @@ interface CandlestickChartProps {
   symbol: string;
   data: Candle[];
   zones?: Zone[];
-  tradePlan?: TradePlan | null;
   /**
-   * Draws the same risk/reward box as `tradePlan`, but independently of a
-   * live `Zone` — for a trade-history record, which only has its own
-   * entry/stop/targets/timestamps, not the zone that produced them. Only
-   * one of `tradePlan` / `tradeBox` is normally passed at a time.
+   * The risk/reward box to draw — entry/stop/targets/timestamps built by
+   * the caller directly from a frozen trade record or live plan, rather
+   * than a `TradePlan` + `Zone` this component would need to re-derive an
+   * entry candle position from itself (see AnalysisDashboard's own doc
+   * comment on why that re-derivation is fragile for a retest past the
+   * first).
    */
   tradeBox?: TradePlanBox | null;
   /** Id of a zone price is currently approaching (but hasn't reached yet) — drawn with an extra highlight. */
@@ -105,7 +105,6 @@ export default function CandlestickChart({
   symbol,
   data,
   zones = [],
-  tradePlan = null,
   tradeBox = null,
   highlightZoneId = null,
   timeframe,
@@ -191,21 +190,10 @@ export default function CandlestickChart({
 
   // A resolved/pending record's box can sit well behind whatever's
   // currently active (a trade from a day ago on a fast timeframe, say),
-  // while the zoom logic below only looks at active zones — computed once
-  // here so both that zoom and the box-drawing effect agree on the same
-  // box instead of recomputing it (and potentially disagreeing) twice.
-  const resolvedBox: TradePlanBox | null = useMemo(() => {
-    if (tradeBox) return tradeBox;
-    if (tradePlan && data.length > 0) {
-      return {
-        ...computeTradePlanSpan(tradePlan, data),
-        entry: tradePlan.entry,
-        stopLoss: tradePlan.stopLoss,
-        targets: tradePlan.targets,
-      };
-    }
-    return null;
-  }, [tradeBox, tradePlan, data]);
+  // while the zoom logic below only looks at active zones — read directly
+  // off the `tradeBox` prop so both that zoom and the box-drawing effect
+  // agree on the same box.
+  const resolvedBox: TradePlanBox | null = tradeBox;
 
   // Identifies the actual instrument being shown — a change here means a
   // genuinely different chart (different price scale, different history),

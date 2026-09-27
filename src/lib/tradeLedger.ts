@@ -16,6 +16,21 @@ export interface FrozenTradePlanFields {
   riskRewardRatios: number[];
   confidenceScore: number;
   zone: Zone;
+  /**
+   * The entry candle's own timestamp, frozen alongside everything else —
+   * the authoritative anchor for "has this hit a target yet" checks
+   * (evaluateTradeOutcome), which should use this directly instead of
+   * re-deriving the entry candle's position via findEntryIndices against
+   * today's candle window. For a retest past the first, that re-derivation
+   * requires replaying the *entire* "left, then came back" sequence from
+   * scratch, which can silently fail to relocate the same candle as the
+   * window drifts — confirmed directly against live data (SOL/1h, retest
+   * #2): getTradePlanProgress kept returning highestTargetHit: 0 long
+   * after a candle had clearly closed above target 1, because
+   * findEntryIndices no longer reconstructed the same entry against the
+   * day's later candle window.
+   */
+  loggedAt: number;
 }
 
 export interface TradePlanCandidate extends FrozenTradePlanFields {
@@ -35,6 +50,7 @@ interface TradePlanRow {
   risk_reward_ratios: number[];
   confidence_score: number;
   zone: Zone;
+  logged_at: number;
 }
 
 /**
@@ -87,7 +103,7 @@ export async function freezeTradePlans(
     const ids = candidates.map((c) => c.id);
 
     const existingRows = (await db`
-      select id, entry, stop_loss, targets, risk_reward_ratios, confidence_score, zone
+      select id, entry, stop_loss, targets, risk_reward_ratios, confidence_score, zone, logged_at
       from trade_plans
       where id = any(${ids})
     `) as TradePlanRow[];
@@ -100,6 +116,7 @@ export async function freezeTradePlans(
         riskRewardRatios: row.risk_reward_ratios,
         confidenceScore: row.confidence_score,
         zone: row.zone,
+        loggedAt: Number(row.logged_at),
       });
     }
 
@@ -126,6 +143,7 @@ export async function freezeTradePlans(
         riskRewardRatios: c.riskRewardRatios,
         confidenceScore: c.confidenceScore,
         zone: c.zone,
+        loggedAt: c.loggedAt,
       });
     }
   } catch {
@@ -138,6 +156,7 @@ export async function freezeTradePlans(
           riskRewardRatios: c.riskRewardRatios,
           confidenceScore: c.confidenceScore,
           zone: c.zone,
+          loggedAt: c.loggedAt,
         });
       }
     }
@@ -159,14 +178,14 @@ export async function freezeLiveTradePlan(
   candles: Candle[],
   symbol: string,
   timeframe: string
-): Promise<{ tradePlan: TradePlan; confidenceScore: number }> {
+): Promise<{ tradePlan: TradePlan; confidenceScore: number; loggedAt: number }> {
   const entryIndices = findEntryIndices(candles, tradePlan.zone.endTime, tradePlan.zone.top, tradePlan.zone.bottom);
   const entryIndex = entryIndices[tradePlan.retestNumber - 1];
   if (entryIndex === undefined) {
     // Shouldn't happen for a plan buildTradePlan itself just returned, but
     // falls back to the freshly-computed (unfrozen) plan rather than
     // throwing if it somehow does.
-    return { tradePlan, confidenceScore: 0 };
+    return { tradePlan, confidenceScore: 0, loggedAt: candles[candles.length - 1]?.time ?? 0 };
   }
 
   const candlesAtEntry = candles.slice(0, entryIndex + 1);
@@ -191,7 +210,7 @@ export async function freezeLiveTradePlan(
   ]);
 
   const fields = frozen.get(id);
-  if (!fields) return { tradePlan, confidenceScore: confidence.score };
+  if (!fields) return { tradePlan, confidenceScore: confidence.score, loggedAt: candles[entryIndex].time };
 
   return {
     tradePlan: {
@@ -203,5 +222,6 @@ export async function freezeLiveTradePlan(
       zone: fields.zone,
     },
     confidenceScore: fields.confidenceScore,
+    loggedAt: fields.loggedAt,
   };
 }

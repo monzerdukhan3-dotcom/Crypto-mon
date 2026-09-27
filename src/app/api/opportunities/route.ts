@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
-import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone, getTradePlanProgress } from "@/lib/tradePlan";
+import { buildTradePlan, findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
 import { freezeLiveTradePlan } from "@/lib/tradeLedger";
+import { evaluateTradeOutcome, type TradeRecord } from "@/lib/tradeHistory";
 import { detectTrend } from "@/lib/trend";
 import { detectSearchableZones } from "@/lib/zones";
 import type { Timeframe } from "@/lib/constants";
@@ -97,15 +98,45 @@ export async function GET(request: NextRequest) {
     // no-look-ahead fix doesn't fully solve on its own: two independent
     // requests re-derive "the zone map as of entry" from whichever candle
     // window Binance happens to hand back at that exact moment.
-    const tradePlan = rawTradePlan
-      ? (await freezeLiveTradePlan(rawTradePlan, candles, symbol, tf)).tradePlan
-      : null;
+    const frozenPlan = rawTradePlan ? await freezeLiveTradePlan(rawTradePlan, candles, symbol, tf) : null;
+    const tradePlan = frozenPlan?.tradePlan ?? null;
     // A plan that already reached one of its targets is still a genuinely
     // open position (see /history and the coin's own chart), but it's no
     // longer a fresh entry — this page lists setups that are still purely
     // at risk, not ones already banking a win, so it drops out here once
-    // any target has actually been hit.
-    const freshTradePlan = tradePlan && getTradePlanProgress(tradePlan, candles).highestTargetHit === 0 ? tradePlan : null;
+    // any target has actually been hit. Checked via evaluateTradeOutcome
+    // against the frozen loggedAt directly rather than re-deriving the
+    // entry candle's position with getTradePlanProgress: that re-derivation
+    // replays findEntryIndices' whole multi-step "left, then came back"
+    // sequence against today's candle window, which can silently fail to
+    // relocate a retest past the first as the window drifts — confirmed
+    // directly against live data (SOL/1h, retest #2), where it kept
+    // reporting highestTargetHit: 0 long after a candle had closed above
+    // target 1.
+    const highestTargetHit =
+      tradePlan && frozenPlan
+        ? evaluateTradeOutcome(
+            {
+              id: "",
+              symbol,
+              timeframe: tf,
+              loggedAt: frozenPlan.loggedAt,
+              entry: tradePlan.entry,
+              stopLoss: tradePlan.stopLoss,
+              targets: tradePlan.targets,
+              riskRewardRatios: tradePlan.riskRewardRatios,
+              zone: tradePlan.zone,
+              retestNumber: tradePlan.retestNumber,
+              confidenceScore: 0,
+              highestTargetHit: 0,
+              stoppedOut: false,
+              resolved: false,
+              resolvedAt: null,
+            } satisfies TradeRecord,
+            candles
+          ).highestTargetHit
+        : 0;
+    const freshTradePlan = tradePlan && highestTargetHit === 0 ? tradePlan : null;
     // Tighter than the single-coin dashboard's own 6x-ATR watch band — that
     // one only ever shows a single coin's single nearest zone, but scanning
     // all 76 coins at once with the same generous band buries the handful
