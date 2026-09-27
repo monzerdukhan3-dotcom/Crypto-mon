@@ -12,12 +12,13 @@ import { detectSearchableZones } from "./zones";
  * current version — so tuning the engine later starts a new, clearly
  * separate record instead of silently rewriting trades already shown.
  */
-export const ENGINE_VERSION = 1;
+export const ENGINE_VERSION = 2;
 
 /**
  * Exactly how many closed candles every decision is made from: the live
  * chart's own window size. A signal at entry candle E is decided from the
- * 250 closed candles ending at E and nothing else — no later candle, and
+ * 250 closed candles just before E (plus the fact that E touched the zone)
+ * and nothing else — no later candle, and
  * no earlier one either — so the same entry candle always produces exactly
  * the same trade no matter when (or how many times) it's computed. Zone
  * detection itself is window-relative (ATR/volume/body averages, the "new
@@ -58,7 +59,7 @@ export interface Signal {
   id: string;
   symbol: string;
   timeframe: Timeframe;
-  /** Open time of the entry candle (the closed candle that returned into the zone). */
+  /** Open time of the entry candle (the candle whose low touched the zone's top). */
   loggedAt: number;
   retestNumber: number;
   entry: number;
@@ -82,20 +83,25 @@ function dailyWindowAt(dailyCandles: Candle[], decisionTime: number): Candle[] {
 }
 
 /**
- * Every signal whose entry candle is `candles[index]`, decided purely from
- * the ENGINE_WINDOW closed candles ending there (see ENGINE_WINDOW). Rules,
- * all evaluated as of that candle's close:
- * - the zone must be a validated, unbroken-at-formation demand zone that
- *   zone detection finds in that window — i.e. already confirmed by then,
- *   not only in hindsight;
- * - this candle must be one of the zone's first MAX_ZONE_ENTRIES closes
- *   back at or inside its top after a confirmed breakout above it, with the
- *   zone never closed below in between (findEntryIndices);
+ * Every signal whose entry candle is `candles[index]`. The entry is a touch
+ * of the zone's top during that candle — exactly a buy limit order resting
+ * there — so everything about the trade is decided *before* that candle,
+ * from the ENGINE_WINDOW closed candles ending just before it (see
+ * ENGINE_WINDOW): the zone, its confirmation, the trend gate, the targets,
+ * the confidence. The entry candle itself contributes only the fact that
+ * its low reached the zone, which is final the moment it happens — so a
+ * trade shown live the instant price touches the zone is the very same
+ * trade recorded once that candle closes. Rules:
+ * - the zone must be a validated demand zone that zone detection already
+ *   finds in the pre-entry window — confirmed by then, not in hindsight;
+ * - this candle must be one of the zone's first MAX_ZONE_ENTRIES touches
+ *   after a confirmed breakout above it, each after price fully left the
+ *   zone, with the zone never closed below in between (findEntryIndices);
  * - a confirmed downtrend on this timeframe rejects it unless the zone
  *   overlaps a same-type daily zone (تداخل المناطق);
  * - planFromZone must produce a plan whose first target clears 1R.
- * Needs a full window — an index with fewer than ENGINE_WINDOW candles
- * before it isn't decidable reproducibly and yields nothing.
+ * Needs a full window before the entry candle — otherwise it isn't
+ * decidable reproducibly and yields nothing.
  */
 export function signalsAt(
   symbol: string,
@@ -104,12 +110,12 @@ export function signalsAt(
   index: number,
   dailyCandles: Candle[] | null
 ): Signal[] {
-  if (index < ENGINE_WINDOW - 1 || index >= candles.length) return [];
-  const window = candles.slice(index - ENGINE_WINDOW + 1, index + 1);
-  const entryCandle = window[window.length - 1];
-  const decisionTime = entryCandle.time + TIMEFRAME_SECONDS[timeframe];
+  if (index < ENGINE_WINDOW || index >= candles.length) return [];
+  const window = candles.slice(index - ENGINE_WINDOW, index);
+  const entryCandle = candles[index];
+  const withEntry = [...window, entryCandle];
 
-  const htfCandles = dailyCandles ? dailyWindowAt(dailyCandles, decisionTime) : null;
+  const htfCandles = dailyCandles ? dailyWindowAt(dailyCandles, entryCandle.time) : null;
   const zones = detectSearchableZones(window, {
     higherTimeframeCandles: htfCandles && htfCandles.length > 0 ? htfCandles : null,
   });
@@ -119,8 +125,9 @@ export function signalsAt(
 
   for (const zone of zones) {
     if (zone.type !== "demand") continue;
-    const entryIndices = findEntryIndices(window, zone.endTime, zone.top, zone.bottom);
-    const position = entryIndices.indexOf(window.length - 1);
+    if (entryCandle.low > zone.top) continue;
+    const entryIndices = findEntryIndices(withEntry, zone.endTime, zone.top, zone.bottom);
+    const position = entryIndices.indexOf(withEntry.length - 1);
     if (position === -1) continue;
     if (trend === "down" && !zone.htfOverlap) continue;
 
@@ -169,7 +176,7 @@ export function scanSignals(
   dailyClosed: Candle[] | null
 ): Signal[] {
   const result: Signal[] = [];
-  for (let i = ENGINE_WINDOW - 1; i < closed.length; i++) {
+  for (let i = ENGINE_WINDOW; i < closed.length; i++) {
     if (closed[i].time < fromTime) continue;
     result.push(...signalsAt(symbol, timeframe, closed, i, dailyClosed));
   }

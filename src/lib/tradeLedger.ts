@@ -9,6 +9,7 @@ import {
   HISTORY_START_TIME,
   scanSignals,
   scanStartTime,
+  signalsAt,
   type Signal,
 } from "./signalEngine";
 import type { TradeConfidence } from "./tradeConfidence";
@@ -129,29 +130,34 @@ async function syncSignalsUncached(symbol: string, timeframe: Timeframe): Promis
   const lastClosedOpenTime = Math.floor((now - CLOSE_SETTLE_SECONDS) / span) * span - span;
   const needsScan = scanFrom <= lastClosedOpenTime;
 
-  // Nothing new has closed and nothing is open: the stored ledger is
-  // already the complete, final answer — no exchange request needed.
-  if (!needsScan && oldestOpen === Infinity) {
-    return { records: stored.filter(isPublic).sort((a, b) => a.loggedAt - b.loggedAt), candles: [] };
-  }
-
-  // A few spare candles beyond the window so an exchange gap never leaves
-  // an entry candle short of a full ENGINE_WINDOW.
-  const dataStart = needsScan ? Math.min(scanFrom - (ENGINE_WINDOW + 10) * span, oldestOpen) : oldestOpen;
+  // Enough history for a full window before the earliest candle checked
+  // (the first unscanned closed candle, or the current one for a live
+  // touch), plus a few spare candles so an exchange gap never leaves an
+  // entry candle short of a full ENGINE_WINDOW.
+  const firstChecked = needsScan ? scanFrom : lastClosedOpenTime + span;
+  const dataStart = Math.min(firstChecked - (ENGINE_WINDOW + 10) * span, oldestOpen);
 
   const [candles, dailyCandles] = await Promise.all([
     getCandlesSince(symbol, timeframe, dataStart),
-    timeframe === "1d" || !needsScan
+    timeframe === "1d"
       ? Promise.resolve(null)
-      : getCandlesSince(symbol, "1d", scanFrom - (ENGINE_WINDOW + 10) * TIMEFRAME_SECONDS["1d"]),
+      : getCandlesSince(symbol, "1d", firstChecked - (ENGINE_WINDOW + 10) * TIMEFRAME_SECONDS["1d"]),
   ]);
   const closed = closedCandles(candles, timeframe, now);
   const formingCandleTime = candles.length > closed.length ? candles[closed.length].time : Number.POSITIVE_INFINITY;
   const dailyClosed = dailyCandles ? closedCandles(dailyCandles, "1d", now) : null;
 
+  // The candle still in progress can already open a trade: the entry is a
+  // touch of the zone, decided entirely from the closed candles before it,
+  // and a low that has reached the zone can't un-reach it — so this is
+  // the identical signal the closed-candle scan produces for it later.
+  const liveSignals =
+    candles.length > closed.length ? signalsAt(symbol, timeframe, candles, closed.length, dailyClosed) : [];
+
   const storedIds = new Set(stored.map((r) => r.id));
-  const fresh = (needsScan ? scanSignals(symbol, timeframe, closed, scanFrom, dailyClosed) : [])
-    .filter((s) => !storedIds.has(s.id))
+  const seen = new Set<string>();
+  const fresh = [...(needsScan ? scanSignals(symbol, timeframe, closed, scanFrom, dailyClosed) : []), ...liveSignals]
+    .filter((s) => !storedIds.has(s.id) && !seen.has(s.id) && seen.add(s.id))
     .map(signalToRecord);
 
   // Outcome as of the last *closed* candle is what gets persisted — final,
@@ -214,7 +220,9 @@ async function syncSignalsUncached(symbol: string, timeframe: Timeframe): Promis
   return { records, candles };
 }
 
-const inflight = new Map<string, Promise<PairSignals>>();
+/** Per-instance reuse window: bursts of requests for one pair share one sync. */
+const SYNC_REUSE_MS = 20_000;
+const inflight = new Map<string, { at: number; promise: Promise<PairSignals> }>();
 
 /**
  * Brings the pair's ledger up to date (scans every newly closed candle
@@ -226,9 +234,10 @@ const inflight = new Map<string, Promise<PairSignals>>();
 export function syncSignals(symbol: string, timeframe: Timeframe): Promise<PairSignals> {
   const key = `${symbol}:${timeframe}`;
   const existing = inflight.get(key);
-  if (existing) return existing;
-  const promise = syncSignalsUncached(symbol, timeframe).finally(() => inflight.delete(key));
-  inflight.set(key, promise);
+  if (existing && Date.now() - existing.at < SYNC_REUSE_MS) return existing.promise;
+  const promise = syncSignalsUncached(symbol, timeframe);
+  inflight.set(key, { at: Date.now(), promise });
+  promise.catch(() => inflight.delete(key));
   return promise;
 }
 
