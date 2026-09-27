@@ -416,11 +416,15 @@ function findBreakTime(zone: Zone, candles: Candle[]): number | null {
  * once price closed decisively through it, leaving no trace of why a
  * demand/supply box that was on the chart a moment ago is now gone. Only
  * worth surfacing while price is still nearby (same watch band as
- * findApproachingDemandZone); an old break from weeks back that price has
- * long since moved away from isn't relevant context anymore. Purely
- * informational — CandlestickChart renders it dimmed and dashed with a
- * "منطقة مكسورة" label instead of the normal solid box, and it never
- * feeds into buildTradePlan or any other trading decision.
+ * findApproachingDemandZone) *and* the break itself is still recent
+ * (RECENT_BREAK_LOOKBACK_CANDLES) — price distance alone isn't enough: a
+ * quiet, low-ATR market can leave an old break from weeks back sitting
+ * just as "close" by price as a break from yesterday, so a candle-count
+ * cutoff on the break itself is what actually keeps this from reading as
+ * outdated once price has simply drifted back near a level it broke long
+ * ago. Purely informational — CandlestickChart renders it dimmed and
+ * dashed with a "منطقة مكسورة" label instead of the normal solid box, and
+ * it never feeds into buildTradePlan or any other trading decision.
  *
  * The returned zone's `endTime` is moved up to the actual breakout candle
  * (rather than the zone's own narrow formation box) so the rectangle
@@ -437,6 +441,9 @@ function findBreakTime(zone: Zone, candles: Candle[]): number | null {
  * active zone of the same type already covers that price avoids that
  * contradiction.
  */
+/** How many of the most recent candles a break can have happened in and still count as "recent" here. */
+const RECENT_BREAK_LOOKBACK_CANDLES = 60;
+
 export function findRecentlyBrokenZone(
   zones: Zone[],
   currentPrice: number,
@@ -461,15 +468,24 @@ export function findRecentlyBrokenZone(
   const supersededByActiveZone = (z: Zone) =>
     zones.some((other) => other.active && other.type === z.type && overlaps(other, z));
 
+  const breakTimeByZoneId = new Map<string, number>();
+  const isRecentBreak = (z: Zone): boolean => {
+    const breakTime = findBreakTime(z, candles);
+    if (breakTime === null) return false;
+    breakTimeByZoneId.set(z.id, breakTime);
+    const breakIndex = candles.findIndex((c) => c.time === breakTime);
+    return breakIndex !== -1 && candles.length - breakIndex <= RECENT_BREAK_LOOKBACK_CANDLES;
+  };
+
   const candidates = zones.filter(
-    (z) => !z.active && distanceToPrice(z) <= maxDistance && !supersededByActiveZone(z)
+    (z) => !z.active && distanceToPrice(z) <= maxDistance && !supersededByActiveZone(z) && isRecentBreak(z)
   );
   if (candidates.length === 0) return null;
 
   const nearest = candidates.reduce((closest, zone) =>
     distanceToPrice(zone) < distanceToPrice(closest) ? zone : closest
   );
-  const breakTime = findBreakTime(nearest, candles);
+  const breakTime = breakTimeByZoneId.get(nearest.id) ?? findBreakTime(nearest, candles);
   return breakTime === null ? nearest : { ...nearest, endTime: breakTime };
 }
 

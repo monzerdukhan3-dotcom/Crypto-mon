@@ -55,8 +55,6 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
   draw(target: CanvasRenderingTarget2D) {
     const { x1, x2, entryY, stopY, targetYs } = this.coords;
     if (x1 === null || x2 === null || entryY === null || stopY === null) return;
-    if (targetYs.length === 0 || targetYs.some((y) => y === null)) return;
-    const ys = targetYs as Coordinate[];
 
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
@@ -64,18 +62,34 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
       const right = Math.max(x1, x2) * scope.horizontalPixelRatio;
       const entry = entryY * scope.verticalPixelRatio;
       const stop = stopY * scope.verticalPixelRatio;
-      const topTarget = Math.min(...ys) * scope.verticalPixelRatio;
+      // priceToCoordinate() returns null for a price outside the chart's
+      // current auto-scaled price range — a pending trade's furthest
+      // target routinely sits above every candle actually on screen yet.
+      // Requiring every target to have a valid coordinate before drawing
+      // *anything* (the old behavior) meant a single off-screen target
+      // silently blanked the whole box, Entry line included, even though
+      // entry/stop and any nearer, on-screen target were perfectly
+      // drawable — confirmed directly against a real pending record
+      // (APT/4h) whose chart showed no box at all. Only the individual
+      // levels that are actually off-screen get skipped now.
+      const visibleTargetYs = targetYs.filter((y): y is Coordinate => y !== null);
+      const topTarget =
+        visibleTargetYs.length > 0 ? Math.min(...visibleTargetYs) * scope.verticalPixelRatio : entry;
 
       ctx.save();
 
-      // Profit side: entry up to the furthest target — a TradingView "long
-      // position tool"-style box rather than the bare dashed lines this
-      // used to be, so a trade's whole risk/reward shape reads at a glance.
-      ctx.fillStyle = PROFIT_FILL;
-      ctx.fillRect(left, topTarget, right - left, entry - topTarget);
-      ctx.strokeStyle = PROFIT_BORDER;
-      ctx.lineWidth = 1.25;
-      ctx.strokeRect(left, topTarget, right - left, entry - topTarget);
+      // Profit side: entry up to the furthest *visible* target — a
+      // TradingView "long position tool"-style box rather than the bare
+      // dashed lines this used to be, so a trade's whole risk/reward shape
+      // reads at a glance. Skipped entirely when every target is
+      // off-screen (topTarget === entry leaves nothing to fill).
+      if (visibleTargetYs.length > 0) {
+        ctx.fillStyle = PROFIT_FILL;
+        ctx.fillRect(left, topTarget, right - left, entry - topTarget);
+        ctx.strokeStyle = PROFIT_BORDER;
+        ctx.lineWidth = 1.25;
+        ctx.strokeRect(left, topTarget, right - left, entry - topTarget);
+      }
 
       // Risk side: entry down to the stop loss.
       ctx.fillStyle = this.box.stoppedOut ? RISK_FILL_HIT : RISK_FILL;
@@ -97,9 +111,11 @@ class TradePlanBoxPaneRenderer implements IPrimitivePaneRenderer {
       // Take-profit dividers inside the profit side, each labeled — a
       // target already reached is drawn solid, one still pending stays
       // dashed, so the box also doubles as a quick read on how far a
-      // resolved/in-progress trade actually got.
+      // resolved/in-progress trade actually got. An off-screen target (see
+      // above) is simply skipped rather than blanking the rest.
       const targetsHit = this.box.targetsHit ?? 0;
-      ys.forEach((y, i) => {
+      targetYs.forEach((y, i) => {
+        if (y === null) return;
         const yPx = y * scope.verticalPixelRatio;
         const hit = i < targetsHit;
         ctx.strokeStyle = PROFIT_BORDER;

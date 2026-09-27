@@ -1,7 +1,7 @@
 import type { TradePlan } from "./types";
 
 export type TradeProgressStatus = "profit" | "loss" | "at_entry";
-export type TradeProgressNearestLevel = "target1" | "stop";
+export type TradeProgressNearestLevel = "target" | "stop";
 
 export interface TradeProgress {
   /** currentPrice - entry, in price units. */
@@ -9,19 +9,35 @@ export interface TradeProgress {
   /** Same, as a % of entry. */
   priceDiffPct: number;
   status: TradeProgressStatus;
-  /** Whichever of target 1 or the stop loss is currently closer to price. */
+  /** Whichever of the next un-hit target or the stop loss is currently closer to price. */
   nearestLevel: TradeProgressNearestLevel;
-  /** 0-100+ progress from entry toward that nearest level. */
+  /** 1-based target number nearestLevel refers to — meaningless when nearestLevel is "stop". */
+  targetNumber: number;
+  /** 0-100+ progress from the previous level (entry, or the last hit target) toward that nearest level. */
   proximityPct: number;
 }
 
 /** Within this % of entry counts as "at entry" rather than a clear profit/loss. */
 const AT_ENTRY_TOLERANCE_PCT = 0.05;
 
-/** Live profit/loss and proximity-to-target-or-stop for an open trade plan. */
-export function computeTradeProgress(tradePlan: TradePlan, currentPrice: number): TradeProgress {
+/**
+ * Live profit/loss and proximity-to-target-or-stop for an open trade plan.
+ * `highestTargetHit` (0 = none yet) picks which target this tracks toward —
+ * without it, this always tracked target 1 specifically, so once price
+ * actually passed it the bar just stuck at a clamped 100% "approaching
+ * target 1" forever instead of moving on to track target 2 or 3 the way
+ * the trade itself keeps going. Clamped to the last target once every
+ * target's been hit, since there's nothing further to approach.
+ */
+export function computeTradeProgress(
+  tradePlan: TradePlan,
+  currentPrice: number,
+  highestTargetHit: number = 0
+): TradeProgress {
   const { entry, stopLoss, targets } = tradePlan;
-  const target1 = targets[0];
+  const targetIndex = Math.min(highestTargetHit, targets.length - 1);
+  const nextTarget = targets[targetIndex];
+  const previousLevel = targetIndex === 0 ? entry : targets[targetIndex - 1];
 
   const priceDiff = currentPrice - entry;
   const priceDiffPct = (priceDiff / entry) * 100;
@@ -29,16 +45,16 @@ export function computeTradeProgress(tradePlan: TradePlan, currentPrice: number)
   const status: TradeProgressStatus =
     Math.abs(priceDiffPct) <= AT_ENTRY_TOLERANCE_PCT ? "at_entry" : priceDiff > 0 ? "profit" : "loss";
 
-  const distanceToTarget1 = Math.abs(target1 - currentPrice);
+  const distanceToTarget = Math.abs(nextTarget - currentPrice);
   const distanceToStop = Math.abs(currentPrice - stopLoss);
-  const nearestLevel: TradeProgressNearestLevel = distanceToTarget1 <= distanceToStop ? "target1" : "stop";
+  const nearestLevel: TradeProgressNearestLevel = distanceToTarget <= distanceToStop ? "target" : "stop";
 
   const proximityPct =
-    nearestLevel === "target1"
-      ? clamp(((currentPrice - entry) / (target1 - entry)) * 100)
+    nearestLevel === "target"
+      ? clamp(((currentPrice - previousLevel) / (nextTarget - previousLevel)) * 100)
       : clamp(((entry - currentPrice) / (entry - stopLoss)) * 100);
 
-  return { priceDiff, priceDiffPct, status, nearestLevel, proximityPct };
+  return { priceDiff, priceDiffPct, status, nearestLevel, targetNumber: targetIndex + 1, proximityPct };
 }
 
 function clamp(value: number): number {
