@@ -298,12 +298,14 @@ export default function ZonesSidebar({
             </div>
             <div>
               <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
-                <span>الاقتراب من {tradeProgress.nearestLevel === "target1" ? "الهدف 1" : "وقف الخسارة"}</span>
+                <span>
+                  الاقتراب من {tradeProgress.nearestLevel === "target" ? `الهدف ${tradeProgress.targetNumber}` : "وقف الخسارة"}
+                </span>
                 <span>{tradeProgress.proximityPct.toFixed(0)}%</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-surface-border">
                 <div
-                  className={`h-full rounded-full transition-[width] duration-500 ${tradeProgress.nearestLevel === "target1" ? "bg-gradient-to-r from-success/70 to-success" : "bg-gradient-to-r from-danger/70 to-danger"}`}
+                  className={`h-full rounded-full transition-[width] duration-500 ${tradeProgress.nearestLevel === "target" ? "bg-gradient-to-r from-success/70 to-success" : "bg-gradient-to-r from-danger/70 to-danger"}`}
                   style={{ width: `${tradeProgress.proximityPct}%` }}
                 />
               </div>

@@ -13,7 +13,7 @@ import {
 } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
-import { findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
+import { findApproachingDemandZone, findRecentlyBrokenZone, getTradePlanProgress } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
 import { detectTrend } from "@/lib/trend";
 import type { Candle, TradePlan, Zone } from "@/lib/types";
@@ -256,9 +256,16 @@ export default function AnalysisDashboard() {
     return [...zones, ...extra].sort((a, b) => a.startTime - b.startTime);
   }, [zones, tradePlan, approachingZone, recentlyBrokenZone]);
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
+  // Which target this plan has already reached, so the progress bar tracks
+  // toward the next un-hit one instead of sticking at a clamped 100%
+  // "approaching target 1" forever once price actually passes it.
+  const highestTargetHit = useMemo(
+    () => (tradePlan ? getTradePlanProgress(tradePlan, candles).highestTargetHit : 0),
+    [tradePlan, candles]
+  );
   const tradeProgress = useMemo(
-    () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice) : null),
-    [tradePlan, currentPrice]
+    () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice, highestTargetHit) : null),
+    [tradePlan, currentPrice, highestTargetHit]
   );
 
   return (
