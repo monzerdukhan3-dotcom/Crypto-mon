@@ -45,9 +45,16 @@ export function computeTradeProgress(
   const status: TradeProgressStatus =
     Math.abs(priceDiffPct) <= AT_ENTRY_TOLERANCE_PCT ? "at_entry" : priceDiff > 0 ? "profit" : "loss";
 
-  const distanceToTarget = Math.abs(nextTarget - currentPrice);
-  const distanceToStop = Math.abs(currentPrice - stopLoss);
-  const nearestLevel: TradeProgressNearestLevel = distanceToTarget <= distanceToStop ? "target" : "stop";
+  // Which side to track is decided by direction (price is above entry →
+  // heading toward the target; below → toward the stop), not by which one
+  // happens to be numerically closer in raw price terms — a real
+  // asymmetric R:R plan can put the stop closer to entry than target 1 is,
+  // which made a trade already sitting in profit read as "approaching
+  // stop loss" purely because of that geometry, not because price was
+  // actually moving toward it. "at_entry" (too close to call either way)
+  // still falls back to whichever is nearer.
+  const nearestLevel: TradeProgressNearestLevel =
+    status === "profit" ? "target" : status === "loss" ? "stop" : Math.abs(nextTarget - currentPrice) <= Math.abs(currentPrice - stopLoss) ? "target" : "stop";
 
   const proximityPct =
     nearestLevel === "target"
