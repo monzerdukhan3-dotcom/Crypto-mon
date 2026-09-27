@@ -92,10 +92,10 @@ export async function GET(request: NextRequest) {
     // it's computed from the current chart window like the dashboard does.
     const zones = detectSearchableZones(candles, { higherTimeframeCandles: dailyCandles });
     const approachingZone =
-      !liveSignal && suggestionsEnabled
-        ? findApproachingDemandZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 })
+      !openSignal && suggestionsEnabled
+        ? findApproachingDemandZone(zones, currentPrice, candles, liveSignal?.zone.id ?? null)
         : null;
-    const rawBrokenZone = findRecentlyBrokenZone(zones, currentPrice, candles, { watchDistanceAtrRatio: 3 });
+    const rawBrokenZone = findRecentlyBrokenZone(zones, currentPrice, candles);
     const brokenZone = rawBrokenZone && rawBrokenZone.id === liveSignal?.zone.id ? null : rawBrokenZone;
     const recentlyBrokenDemandZone = brokenZone?.type === "demand" ? brokenZone : null;
 

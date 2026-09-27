@@ -193,12 +193,13 @@ export default function AnalysisDashboard() {
         : null,
     [signal]
   );
-  // Only worth flagging once there's no live trade plan already — a real
-  // plan already highlights its own entry zone.
+  // The next zone a touch could open a trade on — flagged even while an
+  // older trade is still open (a different zone is a separate setup), with
+  // the exact same rule /opportunities uses so both pages flag the same zone.
   const approachingZone = useMemo(
     () =>
-      tradeSuggestionsEnabled && !tradePlan && currentPrice !== null
-        ? findApproachingDemandZone(searchableZones, currentPrice, candles)
+      tradeSuggestionsEnabled && currentPrice !== null
+        ? findApproachingDemandZone(searchableZones, currentPrice, candles, tradePlan?.zone.id ?? null)
         : null,
     [tradeSuggestionsEnabled, tradePlan, searchableZones, currentPrice, candles]
   );
