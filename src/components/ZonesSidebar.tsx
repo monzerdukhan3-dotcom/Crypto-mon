@@ -244,7 +244,8 @@ export default function ZonesSidebar({
             <>
               {tradeLoggedAt !== null && (
                 <Note tone="info" icon={Crosshair}>
-                  صفقة مفتوحة منذ إغلاق شمعة {formatDate(tradeLoggedAt)} — مسجّلة في سجل الصفقات بنفس الأرقام تمامًا.
+                  صفقة مفتوحة منذ لمس المنطقة في شمعة {formatDate(tradeLoggedAt)} — مسجّلة في سجل الصفقات بنفس الأرقام
+                  تمامًا.
                 </Note>
               )}
               {tradeStoppedOut && (
@@ -279,8 +280,9 @@ export default function ZonesSidebar({
             <>
               {currentPrice <= approachingZone.top ? (
                 <Note tone="info" icon={Bell}>
-                  السعر داخل منطقة الطلب {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)} الآن —
-                  تُفتح الصفقة وتُسجَّل فقط إذا أغلقت الشمعة الحالية داخل المنطقة (مع استيفاء باقي الشروط).
+                  السعر داخل منطقة الطلب {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)} الآن
+                  لكن لم تُفتح صفقة — شروط الدخول غير مستوفاة عند لمسها (الاتجاه، أو استُهلكت مرات الدخول الثلاث، أو
+                  لم تتأكد المنطقة بعد، أو نسبة العائد أقل من المطلوب).
                 </Note>
               ) : (
                 <Note tone="info" icon={Bell}>

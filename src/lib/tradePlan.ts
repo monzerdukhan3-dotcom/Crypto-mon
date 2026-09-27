@@ -11,20 +11,19 @@ export const MAX_ZONE_ENTRIES = 3;
 
 /**
  * Every distinct return to the zone since its confirmed breakout, up to
- * `maxEntries` (index 0 = the first return). Each entry past the first
- * only counts once the previous one has genuinely resolved *away* from the zone again — a close back above
- * `zoneTop`, meaning that test succeeded and price left, not just ticked
- * back and forth inside the box — and only as long as the zone hasn't
- * broken (a close decisively below `zoneBottom`, zones.ts' own definition
- * of `Zone.active` flipping false) at any point since. A zone that breaks
- * is exhausted for good at that point: "صالحة للدخول 3 مرات ما دامت
- * سليمة" — no further entries, whether or not it's found all 3 yet.
+ * `maxEntries` (index 0 = the first return). The entry is a *touch*: the
+ * first candle whose low reaches the zone's top — a buy limit order resting
+ * at the top fills right there, whatever the candle does afterward.
  *
- * The entry condition is identical for every one of them, including the
- * first: a candle that *closes inside* the zone (zoneBottom <= close <=
- * zoneTop). A candle closing below zoneBottom is the zone breaking, never
- * an entry — including on the would-be entry candle itself — and ends the
- * zone's entries for good.
+ * - The zone only counts once confirmed: some candle after the base must
+ *   first close above `zoneTop` (the breakout).
+ * - A later entry only counts once price has genuinely left the zone again
+ *   in between: a whole candle above `zoneTop` (low > top), so a candle
+ *   wicking in and out repeatedly is one visit, not several.
+ * - A close below `zoneBottom` breaks the zone: no entries after it. The
+ *   touch on the breaking candle itself still happened first (the order was
+ *   filled), so it remains an entry — its outcome is then decided by the
+ *   stop loss like any other trade.
  */
 export function findEntryIndices(
   candles: Candle[],
@@ -47,35 +46,19 @@ export function findEntryIndices(
   if (breakoutIndex === -1) return [];
 
   const entries: number[] = [];
-  let searchFrom = breakoutIndex + 1;
+  // The breakout candle itself may not be fully above the zone yet; a new
+  // visit can only start once price has been entirely above it.
+  let awayFromZone = candles[breakoutIndex].low > zoneTop;
 
-  while (entries.length < maxEntries) {
-    let entryIndex = -1;
-    for (let i = searchFrom; i < candles.length; i++) {
-      // A close below the zone's bottom breaks it — that candle isn't an
-      // entry (you don't buy a zone that just failed), and nothing after
-      // it is either. Checked on the would-be entry candle itself too,
-      // not only on later ones.
-      if (candles[i].close < zoneBottom) return entries;
-      if (candles[i].close <= zoneTop) {
-        entryIndex = i;
-        break;
-      }
+  for (let i = breakoutIndex + 1; i < candles.length && entries.length < maxEntries; i++) {
+    const c = candles[i];
+    if (awayFromZone && c.low <= zoneTop) {
+      entries.push(i);
+      awayFromZone = false;
+    } else if (!awayFromZone && c.low > zoneTop) {
+      awayFromZone = true;
     }
-    if (entryIndex === -1) break;
-    entries.push(entryIndex);
-    if (entries.length >= maxEntries) break;
-
-    let leftAgainIndex = -1;
-    for (let i = entryIndex + 1; i < candles.length; i++) {
-      if (candles[i].close < zoneBottom) return entries; // broken — no further entries
-      if (candles[i].close > zoneTop) {
-        leftAgainIndex = i;
-        break;
-      }
-    }
-    if (leftAgainIndex === -1) break;
-    searchFrom = leftAgainIndex + 1;
+    if (c.close < zoneBottom) break; // zone broken — no further entries
   }
 
   return entries;
@@ -150,10 +133,9 @@ export function planFromZone(
 
 /**
  * The nearest active demand zone price is heading toward, or is already
- * trading inside of, without a trade having opened yet — a trade only opens
- * once a candle *closes* back at or inside the zone's top (see
- * signalEngine.ts), so between the first touch and that close the zone is
- * still just a level to watch. Close enough to be worth flagging so a limit
+ * trading inside of without a trade having opened (the signal engine
+ * rejected the touch — trend gate, entries used up, not yet confirmed, or
+ * too little reward). Close enough to be worth flagging so a limit
  * buy order can be queued at the zone's top ahead of the return.
  */
 export function findApproachingDemandZone(

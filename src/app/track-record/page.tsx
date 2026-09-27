@@ -53,8 +53,8 @@ export default function TrackRecordPage() {
       <div className="flex w-full max-w-3xl flex-col items-center gap-4 text-center">
         <h1 className="text-3xl font-extrabold text-foreground">سجل الأداء الحقيقي</h1>
         <p className="max-w-xl text-sm leading-relaxed text-muted">
-          أرقام محسوبة من بيانات السوق الحقيقية (Binance). كل صفقة قُرّرت لحظة إغلاق شمعة دخولها من البيانات المتاحة
-          حتى تلك اللحظة فقط، ثم حُفظت بشكل دائم دون أي تعديل لاحق — عودة سعر حقيقية لمنطقة طلب صالحة ومؤكَّدة
+          أرقام محسوبة من بيانات السوق الحقيقية (Binance). كل صفقة فُتحت لحظة لمس السعر لمنطقة الطلب، بأرقام قُرّرت من
+          البيانات المتاحة قبل تلك اللحظة فقط، ثم حُفظت بشكل دائم دون أي تعديل لاحق — عودة سعر حقيقية لمنطقة طلب صالحة ومؤكَّدة
           {stats ? `، محلّلة على ${stats.symbolsCovered} عملة عبر ${stats.timeframesCovered} أطر زمنية.` : "."}
         </p>
       </div>

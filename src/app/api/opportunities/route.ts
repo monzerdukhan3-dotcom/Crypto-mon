@@ -49,7 +49,7 @@ export interface OpportunityResult {
   retestNumber: number | null;
   /** For "entry" only: open time of the entry candle — the same trade /history lists. */
   loggedAt: number | null;
-  /** For "approaching" only: price is already inside the zone; the trade opens only if a candle closes there. */
+  /** For "approaching" only: price is already inside the zone, yet no trade opened (entry conditions weren't met). */
   insideZone: boolean | null;
 }
 
