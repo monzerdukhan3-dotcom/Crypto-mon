@@ -3,48 +3,6 @@ import { detectTrend } from "./trend";
 import type { Candle, TradePlan, Zone } from "./types";
 import { detectSearchableZones } from "./zones";
 
-/**
- * How many of a plan's targets have actually been reached since entry,
- * checking every candle's high the same way isEntryStillOpen does — not
- * just where currentPrice happens to sit right now, which can't tell a
- * trade that touched (and pulled back from) target 1 apart from one that
- * never got there at all. Used to tell a genuinely fresh setup (still at
- * or near entry, nothing hit yet) apart from one that's already
- * progressed and simply hasn't been stopped out or fully resolved —
- * still an open position worth showing on its own chart, but no longer a
- * "new opportunity" to list on the opportunities page.
- */
-export function getTradePlanProgress(tradePlan: TradePlan, candles: Candle[]): { highestTargetHit: number } {
-  // tradePlan.retestNumber picks out *which* of this zone's (up to
-  // MAX_ZONE_ENTRIES) returns this specific plan is — entry price is the
-  // same zone.top every time, so the plain single-entry finder can't tell
-  // them apart; see findEntryIndices' own doc comment.
-  const entries = findEntryIndices(
-    candles,
-    tradePlan.zone.endTime,
-    tradePlan.entry,
-    tradePlan.zone.bottom,
-    tradePlan.retestNumber
-  );
-  const entryIndex = entries[tradePlan.retestNumber - 1] ?? -1;
-  if (entryIndex === -1) return { highestTargetHit: 0 };
-
-  let highestTargetHit = 0;
-  const entryTime = candles[entryIndex].time;
-  // Includes the entry candle itself, and checks close (not low) against
-  // the stop — see evaluateTradeOutcome's own doc comment (tradeHistory.ts)
-  // for the full reasoning on both.
-  for (const c of candles) {
-    if (c.time < entryTime) continue;
-    if (c.close <= tradePlan.stopLoss) break;
-    while (highestTargetHit < tradePlan.targets.length && c.high >= tradePlan.targets[highestTargetHit]) {
-      highestTargetHit++;
-    }
-    if (highestTargetHit === tradePlan.targets.length) break;
-  }
-  return { highestTargetHit };
-}
-
 function latestAtr(candles: Candle[], period = 14): number | null {
   const atr = calculateATR(candles, period);
   return [...atr].reverse().find((v) => Number.isFinite(v) && v > 0) ?? null;
@@ -489,41 +447,3 @@ export function findRecentlyBrokenZone(
   return breakTime === null ? nearest : { ...nearest, endTime: breakTime };
 }
 
-/**
- * The time span a live trade plan's risk/reward box should be drawn over:
- * starting at the actual entry candle (the first return to the zone, which
- * can be well after the zone's own narrow formation box if the position has
- * been open a while) and ending the moment price first reaches the stop
- * loss or any target, whichever comes first — the same "worst case first"
- * convention tradeHistory.ts uses to resolve a trade. Runs to the last
- * available candle if nothing has been hit yet.
- */
-export function computeTradePlanSpan(tradePlan: TradePlan, candles: Candle[]): { startTime: number; endTime: number } {
-  // Picks out this plan's own retest (see findEntryIndices) rather than
-  // always the zone's first entry — entry price is the same zone.top
-  // either way, so the plain single-entry finder can't tell them apart.
-  const entries = findEntryIndices(
-    candles,
-    tradePlan.zone.endTime,
-    tradePlan.entry,
-    tradePlan.zone.bottom,
-    tradePlan.retestNumber
-  );
-  const entryIndex = entries[tradePlan.retestNumber - 1] ?? -1;
-  const fromIndex = entryIndex === -1 ? 0 : entryIndex;
-  const startTime = candles[fromIndex]?.time ?? tradePlan.zone.endTime;
-
-  let endTime = candles[candles.length - 1]?.time ?? startTime;
-  for (let i = fromIndex; i < candles.length; i++) {
-    const c = candles[i];
-    // Stop is close-based (matches isEntryStillOpen/evaluateTradeOutcome);
-    // a target is still touch-based — a real limit sell resting there
-    // fills the instant price touches it, no close needed.
-    if (c.close <= tradePlan.stopLoss || tradePlan.targets.some((t) => c.high >= t)) {
-      endTime = c.time;
-      break;
-    }
-  }
-
-  return { startTime, endTime };
-}

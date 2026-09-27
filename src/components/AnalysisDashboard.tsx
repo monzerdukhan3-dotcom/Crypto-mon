@@ -13,7 +13,8 @@ import {
 } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
 import { scoreTradeConfidence } from "@/lib/tradeConfidence";
-import { findApproachingDemandZone, findRecentlyBrokenZone, getTradePlanProgress } from "@/lib/tradePlan";
+import { evaluateTradeOutcome, type TradeRecord } from "@/lib/tradeHistory";
+import { findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
 import { detectTrend } from "@/lib/trend";
 import type { Candle, TradePlan, Zone } from "@/lib/types";
@@ -29,6 +30,7 @@ interface FetchResult {
   dailyCandles: Candle[] | null;
   tradePlan: TradePlan | null;
   confidenceScore: number | null;
+  loggedAt: number | null;
   error: string | null;
 }
 
@@ -57,13 +59,17 @@ async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Can
 async function fetchTradePlan(
   symbol: string,
   timeframe: Timeframe
-): Promise<{ tradePlan: TradePlan | null; confidenceScore: number | null }> {
+): Promise<{ tradePlan: TradePlan | null; confidenceScore: number | null; loggedAt: number | null }> {
   const res = await fetch(`/api/trade-plan?symbol=${symbol}&timeframe=${timeframe}`);
   const json = await res.json();
   if (!res.ok) {
     throw new Error(json.error ?? "فشل تحميل خطة الصفقة");
   }
-  return { tradePlan: json.tradePlan ?? null, confidenceScore: json.confidenceScore ?? null };
+  return {
+    tradePlan: json.tradePlan ?? null,
+    confidenceScore: json.confidenceScore ?? null,
+    loggedAt: json.loggedAt ?? null,
+  };
 }
 
 export default function AnalysisDashboard() {
@@ -110,7 +116,7 @@ export default function AnalysisDashboard() {
         timeframe === "1d" ? Promise.resolve(null) : fetchCandleSet(symbol, "1d").catch(() => null),
         // Not fatal on its own either — a failed trade-plan lookup still
         // leaves the chart and zones themselves fully usable.
-        fetchTradePlan(symbol, timeframe).catch(() => ({ tradePlan: null, confidenceScore: null })),
+        fetchTradePlan(symbol, timeframe).catch(() => ({ tradePlan: null, confidenceScore: null, loggedAt: null })),
       ])
         .then(([candles, dailyCandles, tradePlanResult]) => {
           if (cancelled) return;
@@ -120,6 +126,7 @@ export default function AnalysisDashboard() {
             dailyCandles,
             tradePlan: tradePlanResult.tradePlan,
             confidenceScore: tradePlanResult.confidenceScore,
+            loggedAt: tradePlanResult.loggedAt,
             error: null,
           });
         })
@@ -131,6 +138,7 @@ export default function AnalysisDashboard() {
             dailyCandles: null,
             tradePlan: null,
             confidenceScore: null,
+            loggedAt: null,
             error: error instanceof Error ? error.message : "فشل تحميل البيانات",
           });
         });
@@ -193,6 +201,7 @@ export default function AnalysisDashboard() {
   // logs for the identical trade.
   const tradePlan = status === "ready" ? (result?.tradePlan ?? null) : null;
   const frozenConfidenceScore = status === "ready" ? (result?.confidenceScore ?? null) : null;
+  const loggedAt = status === "ready" ? (result?.loggedAt ?? null) : null;
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
   const approachingZone = useMemo(
@@ -256,17 +265,60 @@ export default function AnalysisDashboard() {
     return [...zones, ...extra].sort((a, b) => a.startTime - b.startTime);
   }, [zones, tradePlan, approachingZone, recentlyBrokenZone]);
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
-  // Which target this plan has already reached, so the progress bar tracks
-  // toward the next un-hit one instead of sticking at a clamped 100%
-  // "approaching target 1" forever once price actually passes it.
-  const highestTargetHit = useMemo(
-    () => (tradePlan ? getTradePlanProgress(tradePlan, candles).highestTargetHit : 0),
-    [tradePlan, candles]
-  );
+  // Outcome (highestTargetHit/stoppedOut/resolvedAt) evaluated against the
+  // frozen loggedAt directly, via the same evaluateTradeOutcome /history
+  // itself uses — not by re-deriving the entry candle's position with
+  // findEntryIndices against today's candle window (the old
+  // getTradePlanProgress approach). That re-derivation replays the whole
+  // "left, then came back" sequence a retest past the first depends on,
+  // which can silently fail to relocate the same entry as the window
+  // drifts — confirmed directly against live data (SOL/1h, retest #2),
+  // where the progress bar stayed stuck reporting zero targets hit long
+  // after a candle had clearly closed above target 1. loggedAt, stored in
+  // the ledger the moment this setup was first frozen, is immune to that.
+  const outcome = useMemo(() => {
+    if (!tradePlan || loggedAt === null) return null;
+    const preliminary: TradeRecord = {
+      id: "",
+      symbol,
+      timeframe,
+      loggedAt,
+      entry: tradePlan.entry,
+      stopLoss: tradePlan.stopLoss,
+      targets: tradePlan.targets,
+      riskRewardRatios: tradePlan.riskRewardRatios,
+      zone: tradePlan.zone,
+      retestNumber: tradePlan.retestNumber,
+      confidenceScore: 0,
+      highestTargetHit: 0,
+      stoppedOut: false,
+      resolved: false,
+      resolvedAt: null,
+    };
+    return evaluateTradeOutcome(preliminary, candles);
+  }, [tradePlan, loggedAt, symbol, timeframe, candles]);
+  const highestTargetHit = outcome?.highestTargetHit ?? 0;
   const tradeProgress = useMemo(
     () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice, highestTargetHit) : null),
     [tradePlan, currentPrice, highestTargetHit]
   );
+  // Drawn directly from the frozen setup + evaluated outcome, the same way
+  // TradeHistoryView already builds its own tradeBox — avoids
+  // CandlestickChart's own tradePlan-prop path, which internally calls
+  // computeTradePlanSpan and hits the identical findEntryIndices
+  // re-derivation fragility described above just to place the box's start.
+  const tradeBox = useMemo(() => {
+    if (!tradePlan || !outcome || candles.length === 0) return null;
+    return {
+      entry: tradePlan.entry,
+      stopLoss: tradePlan.stopLoss,
+      targets: tradePlan.targets,
+      startTime: outcome.loggedAt,
+      endTime: outcome.resolvedAt ?? candles[candles.length - 1].time,
+      targetsHit: outcome.highestTargetHit,
+      stoppedOut: outcome.stoppedOut,
+    };
+  }, [tradePlan, outcome, candles]);
 
   return (
     <div className="flex w-full max-w-6xl flex-col gap-8">
@@ -344,7 +396,7 @@ export default function AnalysisDashboard() {
               symbol={symbol}
               data={candles}
               zones={displayZones}
-              tradePlan={tradePlan}
+              tradeBox={tradeBox}
               highlightZoneId={approachingZone?.id ?? null}
               timeframe={timeframe}
             />

@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   try {
     const tf = timeframe as Timeframe;
     if (!TRADE_SUGGESTION_TIMEFRAMES.includes(tf)) {
-      return NextResponse.json({ tradePlan: null, confidenceScore: null });
+      return NextResponse.json({ tradePlan: null, confidenceScore: null, loggedAt: null });
     }
 
     const [candles, dailyCandles] = await Promise.all([
@@ -60,11 +60,11 @@ export async function GET(request: NextRequest) {
     const zones = detectSearchableZones(candles, { higherTimeframeCandles: dailyCandles });
     const rawTradePlan = buildTradePlan(zones, currentPrice, candles);
     if (!rawTradePlan) {
-      return NextResponse.json({ tradePlan: null, confidenceScore: null });
+      return NextResponse.json({ tradePlan: null, confidenceScore: null, loggedAt: null });
     }
 
-    const { tradePlan, confidenceScore } = await freezeLiveTradePlan(rawTradePlan, candles, symbol, tf);
-    return NextResponse.json({ tradePlan, confidenceScore });
+    const { tradePlan, confidenceScore, loggedAt } = await freezeLiveTradePlan(rawTradePlan, candles, symbol, tf);
+    return NextResponse.json({ tradePlan, confidenceScore, loggedAt });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to compute trade plan" },
