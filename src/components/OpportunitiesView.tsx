@@ -10,7 +10,7 @@ import type { OpportunityResult } from "@/app/api/opportunities/route";
 
 // Bumped only if OpportunityResult's shape changes — an old cached entry
 // from a previous version would otherwise render with missing fields.
-const CACHE_KEY = "crypto-mon:opportunities-cache:v3";
+const CACHE_KEY = "crypto-mon:opportunities-cache:v4";
 
 // Fetched in small batches rather than all 304 (76 coins × 4 timeframes) at
 // once — each request is still independently cached server-side for a
@@ -43,7 +43,7 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
   const isEntry = item.status === "entry";
   // Only meaningful for "approaching" — see approachingTrendReady's own
   // doc comment on OpportunityResult. A confirmed downtrend right now
-  // means buildTradePlan's own gate would reject a return to this zone as
+  // means the signal engine's trend gate would reject a return to this zone as
   // things stand, so a subscriber watching this row shouldn't expect a
   // trade to open the moment price gets there unless the trend turns
   // first. Not shown for "entry" (already open) or when the trend is fine.
@@ -73,7 +73,11 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
               isEntry ? "bg-success-soft text-success" : "bg-info-soft text-info"
             }`}
           >
-            {isEntry ? "عند نقطة الدخول" : `يقترب (${Math.abs(item.distancePct ?? 0).toFixed(1)}%)`}
+            {isEntry
+              ? "صفقة مفتوحة"
+              : item.insideZone
+                ? "داخل المنطقة — بانتظار الإغلاق"
+                : `يقترب (${Math.abs(item.distancePct ?? 0).toFixed(1)}%)`}
           </span>
           <Link
             href={isEntry ? `/history?symbol=${item.symbol}&timeframe=${item.timeframe}` : `/?symbol=${item.symbol}&timeframe=${item.timeframe}`}
@@ -104,6 +108,14 @@ function OpportunityRow({ item }: { item: OpportunityResult }) {
         {item.stopLoss !== null && (
           <span>
             الوقف: <span className="font-medium text-danger">{formatPrice(item.stopLoss)}</span>
+          </span>
+        )}
+        {item.loggedAt !== null && (
+          <span>
+            الدخول في:{" "}
+            <span className="font-medium text-foreground">
+              {new Date(item.loggedAt * 1000).toLocaleString("ar", { dateStyle: "short", timeStyle: "short" })}
+            </span>
           </span>
         )}
         {item.zoneBottom !== null && item.zoneTop !== null && (
@@ -192,7 +204,7 @@ export default function OpportunitiesView() {
           const key = `${r.symbol}:${r.timeframe}`;
           if (!seenEntriesRef.current.has(key)) {
             new Notification(`${r.symbol} — ${timeframeLabel(r.timeframe)}`, {
-              body: `السعر وصل لمنطقة الدخول عند ${formatPrice(r.entry ?? r.currentPrice)}`,
+              body: `صفقة جديدة: دخول عند ${formatPrice(r.entry ?? r.currentPrice)}`,
               icon: "/logo-mark.png",
               tag: key,
             });
@@ -232,8 +244,8 @@ export default function OpportunitiesView() {
           مسح تلقائي حي لـ 76 عملة على فريمات الساعة و4 ساعات واليومي — يعرض أي عملة وصل سعرها الآن لمنطقة طلب
           صالحة للدخول، وأي عملة تقترب منها. يتجدد تلقائيًا كل دقيقة طالما هذه الصفحة مفتوحة. تنبيهات المتصفح
           (لو فعّلتها) تعمل فقط أثناء بقاء هذه الصفحة مفتوحة في متصفحك — وليست تنبيهات push تصلك والتطبيق مغلق.
-          فريم 15 دقيقة مستبعد من هذا المسح (نسبة نجاح حقيقية ~43% فقط في السجل)، لكنه لا يزال متاحًا للمتابعة
-          من الصفحة الرئيسية.
+          فريم 15 دقيقة مستبعد من هذا المسح، لكنه لا يزال متاحًا للمتابعة من الصفحة الرئيسية. الصفقة تُفتح فقط عند
+          إغلاق شمعة داخل منطقة الطلب — لمس المنطقة وحده لا يفتح صفقة.
         </p>
         <div className="mt-4">
           {notify === "granted" ? (
@@ -293,7 +305,7 @@ export default function OpportunitiesView() {
         <div className="flex flex-col gap-6">
           {entries.length > 0 && (
             <div className="flex flex-col gap-3">
-              <h3 className="text-sm font-semibold text-success">عند نقطة الدخول الآن ({entries.length})</h3>
+              <h3 className="text-sm font-semibold text-success">صفقات مفتوحة لم تحقق هدفًا بعد ({entries.length})</h3>
               <ul className="flex flex-col gap-3">
                 {entries.map((r) => (
                   <OpportunityRow key={`${r.symbol}:${r.timeframe}`} item={r} />

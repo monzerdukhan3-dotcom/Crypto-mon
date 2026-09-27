@@ -1,4 +1,5 @@
 import type { Timeframe } from "./constants";
+import type { TradeConfidence } from "./tradeConfidence";
 import type { Candle, Zone } from "./types";
 
 export interface TradeRecord {
@@ -23,6 +24,8 @@ export interface TradeRecord {
   /** Which distinct return to this same still-unbroken zone this record is — see TradePlan.retestNumber. */
   retestNumber: number;
   confidenceScore: number;
+  /** The full confidence breakdown as scored at entry (null only for records predating it). */
+  confidence: TradeConfidence | null;
   /** Highest target index reached so far (0 = none). */
   highestTargetHit: number;
   stoppedOut: boolean;
@@ -32,44 +35,31 @@ export interface TradeRecord {
 }
 
 /**
- * Re-evaluates a pending record against freshly fetched candles for its own
- * symbol+timeframe: walking forward from (and including) the candle it was
- * logged on, a candle that *closes* at or below the stop loss resolves it
- * as stopped out (checked before that candle's targets — the conservative
- * "worst case first" convention so a single wide candle can't overstate
- * the win rate); otherwise each target reached in turn raises the
- * highest-target-hit count. Only candles within the currently fetched
- * window are visible, so a record older than that window simply keeps its
- * last known state until re-checked with a wider window.
- *
- * Close, not low: a stop-loss is only "real" the same way a zone's own
- * break is (zones.ts' evaluateZoneRange uses `close`, not a wick, for
- * exactly this reason) — a candle that wicks a hair through the stop and
- * closes back above it hasn't actually invalidated the setup, it's the
- * same kind of liquidity grab a zone shrugs off. Confirmed live
- * (SAND/4h): a candle low of 0.03963 against a 0.039649 stop — a 0.00002
- * wick — closed at 0.04016 and price went on to recover to 0.041,
- * exactly the trade a wick-based check would have wrongly called a loss.
- *
- * This does NOT change what stopLoss itself means as a number: it's still
- * the correct price to rest a real stop order at with an exchange, and a
- * real stop-market/stop-limit order fills the instant price touches it,
- * wick or not, regardless of how this backtest scores it after the fact.
- * The gap between "a resting stop order would have executed here" and
- * "this setup, watched rather than pre-placed, wasn't actually
- * invalidated" is real; this function's job is the latter (was the setup
- * itself still good), not a prediction of every possible order type.
- *
- * Includes the entry candle itself deliberately: findEntryIndex only
- * requires that candle's *close* to be at or inside the zone, so a single
- * volatile candle can already close at or below the stop on the very
- * candle that triggered entry. Starting the walk one candle later missed
- * this "instant stop-out" case entirely: with no later candle also
- * closing at the stop, the record could sit pending indefinitely, or even
- * resolve as a win off a later bounce — either way silently skipping a
- * loss that genuinely happened.
+ * Walks forward from the entry candle and resolves the trade by the site's
+ * stated rules:
+ * - Stop loss only by a candle *close* at or below it — a wick through the
+ *   stop that closes back above hasn't invalidated the setup (the same
+ *   close-based rule zones use for a break). Confirmed live (SAND/4h): a
+ *   0.00002 wick under the stop closed well above it and price recovered.
+ * - Targets by touch (a candle high reaching them) — a resting take-profit
+ *   order fills the moment price trades there.
+ * - Within one candle, targets are counted before that candle's close is
+ *   checked against the stop: the close is by definition the last price of
+ *   the candle, so any target its high reached was reached before it.
+ * - The entry candle itself only counts for the stop (its close), never for
+ *   targets: its high may have printed *before* price came down into the
+ *   zone, so counting it would credit a target hit before the entry.
+ * - A still-forming candle (time >= formingCandleTime) can reach a target
+ *   (its high is already final) but can't stop the trade out — its close
+ *   isn't known yet. This is what makes a result shown live identical to
+ *   the one later recorded once that candle closes.
+ * `record.highestTargetHit` is taken as already-established progress.
  */
-export function evaluateTradeOutcome(record: TradeRecord, candles: Candle[]): TradeRecord {
+export function evaluateTradeOutcome(
+  record: TradeRecord,
+  candles: Candle[],
+  formingCandleTime: number = Number.POSITIVE_INFINITY
+): TradeRecord {
   if (record.resolved) return record;
 
   let highestTargetHit = record.highestTargetHit;
@@ -78,17 +68,21 @@ export function evaluateTradeOutcome(record: TradeRecord, candles: Candle[]): Tr
 
   for (const c of candles) {
     if (c.time < record.loggedAt) continue;
+    const isEntryCandle = c.time === record.loggedAt;
+    const isForming = c.time >= formingCandleTime;
 
-    if (c.close <= record.stopLoss) {
+    if (!isEntryCandle) {
+      while (highestTargetHit < record.targets.length && c.high >= record.targets[highestTargetHit]) {
+        highestTargetHit++;
+      }
+      if (highestTargetHit === record.targets.length) {
+        resolvedAt = c.time;
+        break;
+      }
+    }
+
+    if (!isForming && c.close <= record.stopLoss) {
       stoppedOut = true;
-      resolvedAt = c.time;
-      break;
-    }
-
-    while (highestTargetHit < record.targets.length && c.high >= record.targets[highestTargetHit]) {
-      highestTargetHit++;
-    }
-    if (highestTargetHit === record.targets.length) {
       resolvedAt = c.time;
       break;
     }

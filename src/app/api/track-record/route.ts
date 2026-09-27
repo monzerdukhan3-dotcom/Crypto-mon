@@ -6,7 +6,7 @@ import { computeTrackRecordStats } from "@/lib/trackRecord";
 // symbol+timeframe combo, so this is cached rather than recomputed per
 // visitor.
 export const revalidate = 1800;
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET() {
   const stats = await computeTrackRecordStats();

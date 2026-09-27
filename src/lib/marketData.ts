@@ -1,4 +1,4 @@
-import type { Timeframe } from "./constants";
+import { TIMEFRAME_SECONDS, type Timeframe } from "./constants";
 import type { Candle } from "./types";
 
 // data-api.binance.vision is Binance's own read-only public market-data
@@ -69,4 +69,56 @@ export async function getCandles(
       volume: Number(k[5]),
     }))
     .sort((a, b) => a.time - b.time);
+}
+
+const BINANCE_MAX_LIMIT = 1000;
+
+/**
+ * Every candle from `startTimeSeconds` up to now (including the still-forming
+ * one), paging through Binance's 1000-candle limit as needed — for the
+ * signal engine, which must see an exact, fixed span of history rather than
+ * "the latest N candles", so a decision doesn't depend on when it's made.
+ */
+export async function getCandlesSince(
+  symbol: string,
+  timeframe: Timeframe,
+  startTimeSeconds: number
+): Promise<Candle[]> {
+  const pair = `${symbol.toUpperCase()}USDT`;
+  const result: Candle[] = [];
+  let startMs = Math.max(0, Math.floor(startTimeSeconds)) * 1000;
+
+  for (let page = 0; page < 20; page++) {
+    const url = new URL(BINANCE_KLINES_URL);
+    url.searchParams.set("symbol", pair);
+    url.searchParams.set("interval", timeframe);
+    url.searchParams.set("startTime", String(startMs));
+    // Only as many as can exist since startMs — Binance weighs requests by limit.
+    const expected = Math.ceil((Date.now() - startMs) / (TIMEFRAME_SECONDS[timeframe] * 1000)) + 2;
+    url.searchParams.set("limit", String(Math.max(1, Math.min(BINANCE_MAX_LIMIT, expected))));
+
+    // Never cached: the engine decides which candles are closed by the
+    // clock, so a cached response could present a candle that was still
+    // forming when fetched as if it had closed at those prices.
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error(`Binance API request failed (${res.status}): ${await res.text()}`);
+    }
+    const data = (await res.json()) as BinanceKline[];
+    for (const k of data) {
+      result.push({
+        time: Math.floor(k[0] / 1000),
+        open: Number(k[1]),
+        high: Number(k[2]),
+        low: Number(k[3]),
+        close: Number(k[4]),
+        volume: Number(k[5]),
+      });
+    }
+    if (data.length < BINANCE_MAX_LIMIT || data.length === 0) break;
+    startMs = data[data.length - 1][0] + 1;
+  }
+
+  const byTime = new Map(result.map((c) => [c.time, c]));
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }

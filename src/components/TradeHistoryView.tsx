@@ -3,7 +3,7 @@
 import { CircleCheckBig, ChevronDown, Layers, Loader2, RefreshCw, Search, TrendingUp, XCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES, type Timeframe } from "@/lib/constants";
+import { TIMEFRAME_SECONDS, TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES, type Timeframe } from "@/lib/constants";
 import { formatPrice } from "@/lib/format";
 import { readLocalCache, writeLocalCache } from "@/lib/localCache";
 import type { TradeRecord } from "@/lib/tradeHistory";
@@ -199,8 +199,11 @@ async function fetchPairHistory(symbol: string, timeframe: Timeframe): Promise<T
   }
 }
 
-async function fetchCandles(symbol: string, timeframe: Timeframe): Promise<Candle[]> {
-  const res = await fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}`);
+// From a little before the record's own zone formed, so its zone, entry and
+// outcome are always on the chart however old the trade is.
+async function fetchRecordCandles(record: TradeRecord): Promise<Candle[]> {
+  const from = record.zone.startTime - 60 * TIMEFRAME_SECONDS[record.timeframe];
+  const res = await fetch(`/api/candles?symbol=${record.symbol}&timeframe=${record.timeframe}&from=${from}`);
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? "فشل تحميل بيانات الشارت");
   return json.candles as Candle[];
@@ -208,7 +211,7 @@ async function fetchCandles(symbol: string, timeframe: Timeframe): Promise<Candl
 
 // Bumped only if TradeRecord's shape changes — an old cached entry from a
 // previous version would otherwise render with missing fields.
-const CACHE_KEY = "crypto-mon:history-cache:v2";
+const CACHE_KEY = "crypto-mon:history-cache:v3";
 
 export default function TradeHistoryView() {
   const searchParams = useSearchParams();
@@ -304,7 +307,7 @@ export default function TradeHistoryView() {
     const record = sorted.find((r) => r.id === expandedId);
     if (!record) return;
 
-    const cacheKey = `${record.symbol}:${record.timeframe}`;
+    const cacheKey = record.id;
     const cached = candleCacheRef.current.get(cacheKey);
     if (cached) {
       setDetail({ recordId: record.id, candles: cached, error: null });
@@ -313,7 +316,7 @@ export default function TradeHistoryView() {
 
     let cancelled = false;
     setDetail(null);
-    fetchCandles(record.symbol, record.timeframe)
+    fetchRecordCandles(record)
       .then((candles) => {
         if (cancelled) return;
         candleCacheRef.current.set(cacheKey, candles);
@@ -353,11 +356,12 @@ export default function TradeHistoryView() {
       <div className="relative overflow-hidden rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition-shadow duration-200 hover:shadow-md">
         <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-info via-success to-info" />
         <p className="text-sm leading-relaxed text-muted">
-          بيانات حقيقية 100% من نفس السوق الحي — ليست تجربة أو محاكاة. يُحتسب تلقائيًا لـ 76 عملة على الأطر
-          الزمنية الأربعة كلها بمجرد أن يعود السعر فعليًا لمنطقة طلب، ويُقيَّم مقابل آخر 250 شمعة حقيقية لكل عملة
-          وفريم زمني. السجل يبدأ من الآن فصاعدًا فقط — لا صفقات قديمة قبل تفعيل هذا السجل — وليس محفوظًا في
-          متصفحك، فهو مطابق لكل الزوار على أي جهاز، ويتجدد تلقائيًا كل بضع دقائق. اضغط على أي صفقة لرؤيتها مرسومة
-          على شارتها.
+          كل صفقة هنا قرّرها المحرك لحظة إغلاق شمعة الدخول، من بيانات Binance الحقيقية المتاحة حتى تلك الشمعة فقط
+          (آخر 250 شمعة مغلقة) — دون أي معرفة بما جاء بعدها. تُحفظ الصفقة بعدها بشكل دائم في قاعدة البيانات: الدخول
+          والوقف والأهداف ونسبة الثقة لا تتغير أبدًا، والنتيجة تُحسم بإغلاق الشموع فقط (الوقف بإغلاق شمعة عند الوقف أو
+          تحته، والأهداف بملامسة السعر لها). يغطي 76 عملة على فريمات الساعة و4 ساعات واليومي، ومطابق لكل الزوار على
+          أي جهاز. الصفقات التي دُخلت قبل إطلاق السجل (20 سبتمبر 2026) أُعيد بناؤها بنفس القواعد تمامًا من بيانات
+          وقتها. اضغط على أي صفقة لرؤيتها مرسومة على شارتها.
         </p>
       </div>
 
@@ -414,7 +418,7 @@ export default function TradeHistoryView() {
         </div>
       ) : filtered.length === 0 ? (
         <p className="text-sm text-muted">
-          {symbolFilter ? "لا توجد صفقات مطابقة لبحثك." : "لم يتحقق أي إعداد صفقة بعد ضمن آخر 250 شمعة المتاحة لأي عملة مدعومة."}
+          {symbolFilter ? "لا توجد صفقات مطابقة لبحثك." : "لا توجد صفقات مسجّلة بعد."}
         </p>
       ) : (
         <ul className="flex flex-col gap-3">

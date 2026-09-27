@@ -1,0 +1,177 @@
+import { TIMEFRAME_SECONDS, type Timeframe } from "./constants";
+import { scoreTradeConfidence, type TradeConfidence } from "./tradeConfidence";
+import { findEntryIndices, planFromZone } from "./tradePlan";
+import { detectTrend } from "./trend";
+import type { Candle, Zone } from "./types";
+import { detectSearchableZones } from "./zones";
+
+/**
+ * Bumped whenever a change to the rules below would make the engine decide
+ * differently for the same candles. Every stored signal carries the
+ * version that produced it, and the ledger only ever reads/writes the
+ * current version — so tuning the engine later starts a new, clearly
+ * separate record instead of silently rewriting trades already shown.
+ */
+export const ENGINE_VERSION = 1;
+
+/**
+ * Exactly how many closed candles every decision is made from: the live
+ * chart's own window size. A signal at entry candle E is decided from the
+ * 250 closed candles ending at E and nothing else — no later candle, and
+ * no earlier one either — so the same entry candle always produces exactly
+ * the same trade no matter when (or how many times) it's computed. Zone
+ * detection itself is window-relative (ATR/volume/body averages, the "new
+ * extreme" check, merge seeding all depend on where the window starts), so
+ * a fixed-size window anchored at the entry candle is what makes it
+ * reproducible; the old "detect over whatever 250 candles Binance returns
+ * today, then look back for entries" approach re-decided every past trade
+ * on every request and measurably changed or dropped them as time moved on.
+ */
+export const ENGINE_WINDOW = 250;
+
+/**
+ * 2026-09-20T11:21:37Z — when the public trade history started. A signal
+ * fully resolved before this moment was never shown to anyone live, so it's
+ * excluded from the history and the track record (see isPublicSignal).
+ */
+export const HISTORY_START_TIME = 1789903297;
+
+/** How far back before HISTORY_START_TIME entries are scanned, in candles — enough to include trades still open at launch. */
+const PRE_LAUNCH_SCAN_CANDLES = 250;
+
+/** Earliest entry candle time the engine ever scans for this timeframe. */
+export function scanStartTime(timeframe: Timeframe): number {
+  return HISTORY_START_TIME - PRE_LAUNCH_SCAN_CANDLES * TIMEFRAME_SECONDS[timeframe];
+}
+
+/** Seconds after a candle's close before it's trusted as final (exchange settlement slack). */
+export const CLOSE_SETTLE_SECONDS = 15;
+
+/** Only fully closed candles — the still-forming one can't decide anything final. */
+export function closedCandles(candles: Candle[], timeframe: Timeframe, nowSeconds: number): Candle[] {
+  const span = TIMEFRAME_SECONDS[timeframe];
+  return candles.filter((c) => c.time + span + CLOSE_SETTLE_SECONDS <= nowSeconds);
+}
+
+export interface Signal {
+  /** `${symbol}:${timeframe}:${loggedAt}:${zone.id}` — one entry candle, one zone. */
+  id: string;
+  symbol: string;
+  timeframe: Timeframe;
+  /** Open time of the entry candle (the closed candle that returned into the zone). */
+  loggedAt: number;
+  retestNumber: number;
+  entry: number;
+  stopLoss: number;
+  targets: number[];
+  riskRewardRatios: number[];
+  confidence: TradeConfidence;
+  zone: Zone;
+}
+
+/**
+ * The higher-timeframe (daily) candles a lower-timeframe decision at
+ * `decisionTime` could actually have seen: only daily candles fully closed
+ * by then, capped to the same fixed window size.
+ */
+function dailyWindowAt(dailyCandles: Candle[], decisionTime: number): Candle[] {
+  const daySpan = TIMEFRAME_SECONDS["1d"];
+  let end = dailyCandles.length;
+  while (end > 0 && dailyCandles[end - 1].time + daySpan > decisionTime) end--;
+  return dailyCandles.slice(Math.max(0, end - ENGINE_WINDOW), end);
+}
+
+/**
+ * Every signal whose entry candle is `candles[index]`, decided purely from
+ * the ENGINE_WINDOW closed candles ending there (see ENGINE_WINDOW). Rules,
+ * all evaluated as of that candle's close:
+ * - the zone must be a validated, unbroken-at-formation demand zone that
+ *   zone detection finds in that window — i.e. already confirmed by then,
+ *   not only in hindsight;
+ * - this candle must be one of the zone's first MAX_ZONE_ENTRIES closes
+ *   back at or inside its top after a confirmed breakout above it, with the
+ *   zone never closed below in between (findEntryIndices);
+ * - a confirmed downtrend on this timeframe rejects it unless the zone
+ *   overlaps a same-type daily zone (تداخل المناطق);
+ * - planFromZone must produce a plan whose first target clears 1R.
+ * Needs a full window — an index with fewer than ENGINE_WINDOW candles
+ * before it isn't decidable reproducibly and yields nothing.
+ */
+export function signalsAt(
+  symbol: string,
+  timeframe: Timeframe,
+  candles: Candle[],
+  index: number,
+  dailyCandles: Candle[] | null
+): Signal[] {
+  if (index < ENGINE_WINDOW - 1 || index >= candles.length) return [];
+  const window = candles.slice(index - ENGINE_WINDOW + 1, index + 1);
+  const entryCandle = window[window.length - 1];
+  const decisionTime = entryCandle.time + TIMEFRAME_SECONDS[timeframe];
+
+  const htfCandles = dailyCandles ? dailyWindowAt(dailyCandles, decisionTime) : null;
+  const zones = detectSearchableZones(window, {
+    higherTimeframeCandles: htfCandles && htfCandles.length > 0 ? htfCandles : null,
+  });
+
+  const trend = detectTrend(window);
+  const signals: Signal[] = [];
+
+  for (const zone of zones) {
+    if (zone.type !== "demand") continue;
+    const entryIndices = findEntryIndices(window, zone.endTime, zone.top, zone.bottom);
+    const position = entryIndices.indexOf(window.length - 1);
+    if (position === -1) continue;
+    if (trend === "down" && !zone.htfOverlap) continue;
+
+    const basePlan = planFromZone(zone, zones);
+    if (!basePlan) continue;
+    const retestNumber = position + 1;
+    const plan = { ...basePlan, retestNumber };
+    const confidence = scoreTradeConfidence(plan, zones, window, null);
+
+    signals.push({
+      id: `${symbol}:${timeframe}:${entryCandle.time}:${zone.id}`,
+      symbol,
+      timeframe,
+      loggedAt: entryCandle.time,
+      retestNumber,
+      entry: plan.entry,
+      stopLoss: plan.stopLoss,
+      targets: plan.targets,
+      riskRewardRatios: plan.riskRewardRatios,
+      confidence,
+      zone,
+    });
+  }
+
+  // Two overlapping demand zones touched by the same candle are one trade,
+  // not two: keep the stronger zone (then the higher one, deterministically).
+  signals.sort((a, b) => b.zone.strengthScore - a.zone.strengthScore || b.zone.top - a.zone.top);
+  const kept: Signal[] = [];
+  for (const s of signals) {
+    const overlapsKept = kept.some((k) => k.zone.bottom <= s.zone.top && k.zone.top >= s.zone.bottom);
+    if (!overlapsKept) kept.push(s);
+  }
+  return kept;
+}
+
+/**
+ * Every signal with an entry candle at or after `fromTime`, over closed
+ * candles only. Deterministic: the same candles always produce the same
+ * signals, and a signal at a given candle never depends on anything after it.
+ */
+export function scanSignals(
+  symbol: string,
+  timeframe: Timeframe,
+  closed: Candle[],
+  fromTime: number,
+  dailyClosed: Candle[] | null
+): Signal[] {
+  const result: Signal[] = [];
+  for (let i = ENGINE_WINDOW - 1; i < closed.length; i++) {
+    if (closed[i].time < fromTime) continue;
+    result.push(...signalsAt(symbol, timeframe, closed, i, dailyClosed));
+  }
+  return result;
+}

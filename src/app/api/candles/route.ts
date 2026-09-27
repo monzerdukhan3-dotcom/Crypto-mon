@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TIMEFRAMES } from "@/lib/constants";
-import { getCandles } from "@/lib/marketData";
+import { TIMEFRAME_SECONDS, TIMEFRAMES } from "@/lib/constants";
+import { getCandles, getCandlesSince } from "@/lib/marketData";
 import type { Timeframe } from "@/lib/constants";
 
 // Ticker symbols are fetched dynamically (see /api/symbols), so validate the
@@ -22,8 +22,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Optional `from` (unix seconds): every candle since then instead of the
+  // latest 250 — so a trade in /history can always be drawn from its own
+  // zone onward, however long ago it happened. Capped to 1500 candles back.
+  const fromParam = searchParams.get("from");
+  const from = fromParam !== null ? Number(fromParam) : null;
+  if (from !== null && !Number.isFinite(from)) {
+    return NextResponse.json({ error: "Invalid from" }, { status: 400 });
+  }
+
   try {
-    const candles = await getCandles(symbol, timeframe as Timeframe);
+    const tf = timeframe as Timeframe;
+    const earliest = Math.floor(Date.now() / 1000) - 1500 * TIMEFRAME_SECONDS[tf];
+    const candles = from !== null ? await getCandlesSince(symbol, tf, Math.max(from, earliest)) : await getCandles(symbol, tf);
     return NextResponse.json({ candles });
   } catch (error) {
     return NextResponse.json(
