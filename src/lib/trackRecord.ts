@@ -1,6 +1,5 @@
 import { SUPPORTED_SYMBOLS, TRADE_SUGGESTION_TIMEFRAMES } from "./constants";
-import { getCandles } from "./marketData";
-import { backtestTradeHistory } from "./tradeBacktest";
+import { syncSignals } from "./tradeLedger";
 
 const CONCURRENCY = 10;
 
@@ -19,20 +18,26 @@ export interface TrackRecordStats {
 }
 
 /**
- * Aggregates backtestTradeHistory() across every SUPPORTED_SYMBOLS x
- * TRADE_SUGGESTION_TIMEFRAMES combo into a single real performance summary
- * — the same deterministic, server-computed backtest /history uses per
- * symbol, just totaled up. 15m is excluded here too (2026-09-24, same as
- * TRADE_SUGGESTION_TIMEFRAMES' own doc comment): once the site stopped
- * suggesting new 15m trades for its poor real win rate, its old signals
- * were removed from this public number as well rather than left dragging
- * the aggregate down for a timeframe nobody can act on anymore. Expensive
- * (up to ~230 backtest runs), so both callers (the public
- * /api/track-record route and the /track-record page itself, which calls
- * this directly rather than round-tripping through its own API) set their
- * own `revalidate` to cache it rather than recomputing per visitor.
+ * Totals every public signal in the trade ledger (tradeLedger.ts) across
+ * every SUPPORTED_SYMBOLS x TRADE_SUGGESTION_TIMEFRAMES pair — the very
+ * same records /history lists one by one, so the two can never disagree.
+ * Syncing brings each pair's ledger up to date first. Both callers cache
+ * the result (`revalidate`) rather than recomputing it per visitor.
  */
-export async function computeTrackRecordStats(): Promise<TrackRecordStats> {
+const STATS_TTL_MS = 10 * 60 * 1000;
+let cachedStats: { at: number; promise: Promise<TrackRecordStats> } | null = null;
+
+export function computeTrackRecordStats(): Promise<TrackRecordStats> {
+  if (cachedStats && Date.now() - cachedStats.at < STATS_TTL_MS) return cachedStats.promise;
+  const promise = computeTrackRecordStatsUncached();
+  cachedStats = { at: Date.now(), promise };
+  promise.catch(() => {
+    cachedStats = null;
+  });
+  return promise;
+}
+
+async function computeTrackRecordStatsUncached(): Promise<TrackRecordStats> {
   const pairs = SUPPORTED_SYMBOLS.flatMap((s) =>
     TRADE_SUGGESTION_TIMEFRAMES.map((tf) => ({ symbol: s.symbol, timeframe: tf }))
   );
@@ -48,11 +53,7 @@ export async function computeTrackRecordStats(): Promise<TrackRecordStats> {
     while (index < pairs.length) {
       const { symbol, timeframe } = pairs[index++];
       try {
-        const [candles, dailyCandles] = await Promise.all([
-          getCandles(symbol, timeframe),
-          timeframe === "1d" ? Promise.resolve(null) : getCandles(symbol, "1d").catch(() => null),
-        ]);
-        const records = await backtestTradeHistory(symbol, timeframe, candles, dailyCandles);
+        const { records } = await syncSignals(symbol, timeframe);
         for (const record of records) {
           totalSignals++;
           if (!record.resolved) continue;

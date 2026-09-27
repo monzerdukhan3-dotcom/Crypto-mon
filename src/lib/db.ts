@@ -43,31 +43,47 @@ export async function ensureUsersTable(): Promise<void> {
 }
 
 /**
- * One row per distinct trade setup (symbol+timeframe+zone+retest) the site
- * has ever shown to a visitor, written the first time backtestTradeHistory
- * or the live opportunities/dashboard computation encounters it and never
- * touched again afterward — see tradeLedger.ts' own doc comment for why:
- * entry/stop_loss/targets/risk_reward_ratios/confidence_score/zone all
- * describe the setup as it looked at that first sighting and must stay
- * fixed, matching what a real visitor actually saw, rather than drifting
- * on every later recompute as the live zone map keeps changing.
+ * The permanent trade ledger (see tradeLedger.ts). One row per signal the
+ * causal engine (signalEngine.ts) produced: its definition is written once
+ * and never updated; only the outcome columns move, forward only, as closed
+ * candles resolve it. `engine_version` keeps rows from a future rule change
+ * separate instead of mixing them. `signal_scans` records how far each
+ * pair has been scanned so every entry candle is decided exactly once.
+ * (The older `trade_plans` table from the previous design is left
+ * untouched and no longer read.)
  */
-export async function ensureTradePlansTable(): Promise<void> {
+export async function ensureTradeSignalsTables(): Promise<void> {
   const db = sql();
   await db`
-    create table if not exists trade_plans (
+    create table if not exists trade_signals (
       id text primary key,
+      engine_version integer not null,
       symbol text not null,
       timeframe text not null,
-      retest_number integer not null,
       logged_at bigint not null,
+      retest_number integer not null,
       entry double precision not null,
       stop_loss double precision not null,
       targets jsonb not null,
       risk_reward_ratios jsonb not null,
-      confidence_score integer not null,
+      confidence jsonb not null,
       zone jsonb not null,
+      highest_target_hit integer not null default 0,
+      stopped_out boolean not null default false,
+      resolved boolean not null default false,
+      resolved_at bigint,
       created_at timestamptz not null default now()
+    )
+  `;
+  await db`create index if not exists trade_signals_pair_idx on trade_signals (symbol, timeframe, engine_version)`;
+  await db`
+    create table if not exists signal_scans (
+      symbol text not null,
+      timeframe text not null,
+      engine_version integer not null,
+      scanned_through bigint not null,
+      updated_at timestamptz not null default now(),
+      primary key (symbol, timeframe, engine_version)
     )
   `;
 }
@@ -102,7 +118,7 @@ let schemaReady: Promise<void> | null = null;
  */
 export function ensureSchema(): Promise<void> {
   if (!schemaReady) {
-    schemaReady = Promise.all([ensureUsersTable(), ensureTradePlansTable()])
+    schemaReady = Promise.all([ensureUsersTable(), ensureTradeSignalsTables()])
       .then(ensureBootstrapAdmin)
       .catch((error) => {
         schemaReady = null;

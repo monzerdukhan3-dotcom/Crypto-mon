@@ -12,7 +12,6 @@ import {
   type Timeframe,
 } from "@/lib/constants";
 import { generateTechnicalSummary } from "@/lib/technicalSummary";
-import { scoreTradeConfidence } from "@/lib/tradeConfidence";
 import { evaluateTradeOutcome, type TradeRecord } from "@/lib/tradeHistory";
 import { findApproachingDemandZone, findRecentlyBrokenZone } from "@/lib/tradePlan";
 import { computeTradeProgress } from "@/lib/tradeProgress";
@@ -28,9 +27,7 @@ interface FetchResult {
   key: string;
   candles: Candle[];
   dailyCandles: Candle[] | null;
-  tradePlan: TradePlan | null;
-  confidenceScore: number | null;
-  loggedAt: number | null;
+  signal: TradeRecord | null;
   error: string | null;
 }
 
@@ -50,26 +47,15 @@ async function fetchCandleSet(symbol: string, timeframe: Timeframe): Promise<Can
   return json.candles as Candle[];
 }
 
-// The frozen trade plan (see /api/trade-plan's own doc comment on why this
-// is a server round-trip rather than the plain buildTradePlan() call this
-// used to make directly): entry/stopLoss/targets/zone are whatever's
-// actually stored in the ledger for this setup, not a fresh recompute that
-// could permanently disagree with what /history later logs for the same
-// trade.
-async function fetchTradePlan(
-  symbol: string,
-  timeframe: Timeframe
-): Promise<{ tradePlan: TradePlan | null; confidenceScore: number | null; loggedAt: number | null }> {
+// The pair's open trade from the permanent ledger (see /api/trade-plan) —
+// the same record /history and /opportunities show, never recomputed here.
+async function fetchLiveSignal(symbol: string, timeframe: Timeframe): Promise<TradeRecord | null> {
   const res = await fetch(`/api/trade-plan?symbol=${symbol}&timeframe=${timeframe}`);
   const json = await res.json();
   if (!res.ok) {
     throw new Error(json.error ?? "فشل تحميل خطة الصفقة");
   }
-  return {
-    tradePlan: json.tradePlan ?? null,
-    confidenceScore: json.confidenceScore ?? null,
-    loggedAt: json.loggedAt ?? null,
-  };
+  return (json.signal as TradeRecord | null) ?? null;
 }
 
 export default function AnalysisDashboard() {
@@ -116,17 +102,15 @@ export default function AnalysisDashboard() {
         timeframe === "1d" ? Promise.resolve(null) : fetchCandleSet(symbol, "1d").catch(() => null),
         // Not fatal on its own either — a failed trade-plan lookup still
         // leaves the chart and zones themselves fully usable.
-        fetchTradePlan(symbol, timeframe).catch(() => ({ tradePlan: null, confidenceScore: null, loggedAt: null })),
+        fetchLiveSignal(symbol, timeframe).catch(() => null),
       ])
-        .then(([candles, dailyCandles, tradePlanResult]) => {
+        .then(([candles, dailyCandles, signal]) => {
           if (cancelled) return;
           setResult({
             key: requestKey,
             candles,
             dailyCandles,
-            tradePlan: tradePlanResult.tradePlan,
-            confidenceScore: tradePlanResult.confidenceScore,
-            loggedAt: tradePlanResult.loggedAt,
+            signal,
             error: null,
           });
         })
@@ -136,9 +120,7 @@ export default function AnalysisDashboard() {
             key: requestKey,
             candles: [],
             dailyCandles: null,
-            tradePlan: null,
-            confidenceScore: null,
-            loggedAt: null,
+            signal: null,
             error: error instanceof Error ? error.message : "فشل تحميل البيانات",
           });
         });
@@ -194,14 +176,23 @@ export default function AnalysisDashboard() {
   // (detectZones/detectSearchableZones above) stay fully available on
   // 15m regardless, only the plan/approaching-zone suggestions gate on it.
   const tradeSuggestionsEnabled = TRADE_SUGGESTION_TIMEFRAMES.includes(timeframe);
-  // Fetched from /api/trade-plan rather than computed locally — see that
-  // route's own doc comment: entry/stopLoss/targets/zone need to be
-  // whatever's frozen in the ledger for this exact setup, not a fresh
-  // recompute that could permanently disagree with what /history later
-  // logs for the identical trade.
-  const tradePlan = status === "ready" ? (result?.tradePlan ?? null) : null;
-  const frozenConfidenceScore = status === "ready" ? (result?.confidenceScore ?? null) : null;
-  const loggedAt = status === "ready" ? (result?.loggedAt ?? null) : null;
+  // The open trade, exactly as stored in the ledger (see /api/trade-plan).
+  const signal = status === "ready" ? (result?.signal ?? null) : null;
+  const tradePlan: TradePlan | null = useMemo(
+    () =>
+      signal
+        ? {
+            zone: signal.zone,
+            entry: signal.entry,
+            stopLoss: signal.stopLoss,
+            targets: signal.targets,
+            riskAmount: signal.entry - signal.stopLoss,
+            riskRewardRatios: signal.riskRewardRatios,
+            retestNumber: signal.retestNumber,
+          }
+        : null,
+    [signal]
+  );
   // Only worth flagging once there's no live trade plan already — a real
   // plan already highlights its own entry zone.
   const approachingZone = useMemo(
@@ -211,7 +202,7 @@ export default function AnalysisDashboard() {
         : null,
     [tradeSuggestionsEnabled, tradePlan, searchableZones, currentPrice, candles]
   );
-  // Same trend-gate check buildTradePlan itself applies — see
+  // Same trend-gate check the signal engine applies — see
   // OpportunityResult.approachingTrendReady's doc comment for the full
   // reasoning. Only meaningful while approachingZone is set.
   const approachingTrendReady = useMemo(
@@ -223,31 +214,20 @@ export default function AnalysisDashboard() {
   // vanish with no trace of why once price closes through it. Never feeds
   // into the trade plan itself — see findRecentlyBrokenZone's own doc comment.
   //
-  // buildTradePlan is deliberately NOT gated on zone.active (see its own
-  // doc comment): a position already entered stays open past its zone
-  // closing-broken, since the real stop sits a buffer below the zone's raw
-  // bottom. That means the zone driving the live trade plan shown right
-  // below this can itself be the "recently broken" one — excluded here so
-  // it doesn't also tell the user to cancel a pending order on a zone
-  // they've already entered and are actively tracking.
+  // A position already entered stays open past its zone closing-broken
+  // (the real stop sits a buffer below the zone's raw bottom), so the zone
+  // driving the open trade can itself be the "recently broken" one —
+  // excluded here so it doesn't tell the user to cancel a pending order on
+  // a zone they've already entered and are actively tracking.
   const rawRecentlyBrokenZone = useMemo(
     () => (currentPrice !== null ? findRecentlyBrokenZone(searchableZones, currentPrice, candles) : null),
     [searchableZones, currentPrice, candles]
   );
   const recentlyBrokenZone =
     rawRecentlyBrokenZone && rawRecentlyBrokenZone.id === tradePlan?.zone.id ? null : rawRecentlyBrokenZone;
-  // The breakdown (reversal pattern / MTF conflict badges) is still scored
-  // live against today's zones/candles — those describe the market right
-  // now, not the frozen setup itself — but the headline score shown is
-  // overridden by frozenConfidenceScore below so it matches /history's own
-  // confidenceScore for this exact trade exactly, instead of whatever this
-  // local recompute (using today's zone map against the frozen entry
-  // price) happens to land on.
-  const confidence = useMemo(() => {
-    if (!tradePlan) return null;
-    const live = scoreTradeConfidence(tradePlan, searchableZones, candles, dailyCandles);
-    return frozenConfidenceScore !== null ? { ...live, score: frozenConfidenceScore } : live;
-  }, [tradePlan, searchableZones, candles, dailyCandles, frozenConfidenceScore]);
+  // Scored once, at the entry candle, and stored with the trade — the same
+  // number /history shows for it, with its own breakdown.
+  const confidence = signal?.confidence ?? null;
   const technicalSummary = useMemo(
     () => (currentPrice !== null ? generateTechnicalSummary(candles, zones, currentPrice) : ""),
     [candles, zones, currentPrice]
@@ -265,48 +245,22 @@ export default function AnalysisDashboard() {
     return [...zones, ...extra].sort((a, b) => a.startTime - b.startTime);
   }, [zones, tradePlan, approachingZone, recentlyBrokenZone]);
   const volatility = useMemo(() => (candles.length > 0 ? checkVolatility(candles) : null), [candles]);
-  // Outcome (highestTargetHit/stoppedOut/resolvedAt) evaluated against the
-  // frozen loggedAt directly, via the same evaluateTradeOutcome /history
-  // itself uses — not by re-deriving the entry candle's position with
-  // findEntryIndices against today's candle window (the old
-  // getTradePlanProgress approach). That re-derivation replays the whole
-  // "left, then came back" sequence a retest past the first depends on,
-  // which can silently fail to relocate the same entry as the window
-  // drifts — confirmed directly against live data (SOL/1h, retest #2),
-  // where the progress bar stayed stuck reporting zero targets hit long
-  // after a candle had clearly closed above target 1. loggedAt, stored in
-  // the ledger the moment this setup was first frozen, is immune to that.
+  // The stored outcome, carried forward over the freshest candles with the
+  // same rules the ledger uses: the forming candle can reach a target (its
+  // high is final) but can't stop the trade out until it closes.
   const outcome = useMemo(() => {
-    if (!tradePlan || loggedAt === null) return null;
-    const preliminary: TradeRecord = {
-      id: "",
-      symbol,
-      timeframe,
-      loggedAt,
-      entry: tradePlan.entry,
-      stopLoss: tradePlan.stopLoss,
-      targets: tradePlan.targets,
-      riskRewardRatios: tradePlan.riskRewardRatios,
-      zone: tradePlan.zone,
-      retestNumber: tradePlan.retestNumber,
-      confidenceScore: 0,
-      highestTargetHit: 0,
-      stoppedOut: false,
-      resolved: false,
-      resolvedAt: null,
-    };
-    return evaluateTradeOutcome(preliminary, candles);
-  }, [tradePlan, loggedAt, symbol, timeframe, candles]);
+    if (!signal) return null;
+    // Binance always returns the still-open candle last.
+    const formingCandleTime = candles.length > 0 ? candles[candles.length - 1].time : Number.POSITIVE_INFINITY;
+    return evaluateTradeOutcome(signal, candles, formingCandleTime);
+  }, [signal, candles]);
   const highestTargetHit = outcome?.highestTargetHit ?? 0;
   const tradeProgress = useMemo(
     () => (tradePlan && currentPrice !== null ? computeTradeProgress(tradePlan, currentPrice, highestTargetHit) : null),
     [tradePlan, currentPrice, highestTargetHit]
   );
-  // Drawn directly from the frozen setup + evaluated outcome, the same way
-  // TradeHistoryView already builds its own tradeBox — avoids
-  // CandlestickChart's own tradePlan-prop path, which internally calls
-  // computeTradePlanSpan and hits the identical findEntryIndices
-  // re-derivation fragility described above just to place the box's start.
+  // Drawn from the stored trade + its outcome, the same way TradeHistoryView
+  // builds its own tradeBox.
   const tradeBox = useMemo(() => {
     if (!tradePlan || !outcome || candles.length === 0) return null;
     return {
@@ -409,6 +363,8 @@ export default function AnalysisDashboard() {
               symbol={symbol}
               zones={displayZones}
               tradePlan={tradePlan}
+              tradeLoggedAt={signal?.loggedAt ?? null}
+              tradeStoppedOut={outcome?.stoppedOut ?? false}
               approachingZone={approachingZone}
               approachingTrendReady={approachingTrendReady}
               recentlyBrokenZone={recentlyBrokenZone}

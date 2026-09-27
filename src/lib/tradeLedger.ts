@@ -1,290 +1,248 @@
+import { TIMEFRAME_SECONDS, type Timeframe } from "./constants";
 import { ensureSchema, sql } from "./db";
-import { scoreTradeConfidence } from "./tradeConfidence";
-import { findEntryIndices } from "./tradePlan";
-import type { Candle, TradePlan, Zone } from "./types";
-import { detectSearchableZones } from "./zones";
+import { getCandlesSince } from "./marketData";
+import {
+  CLOSE_SETTLE_SECONDS,
+  closedCandles,
+  ENGINE_VERSION,
+  ENGINE_WINDOW,
+  HISTORY_START_TIME,
+  scanSignals,
+  scanStartTime,
+  type Signal,
+} from "./signalEngine";
+import type { TradeConfidence } from "./tradeConfidence";
+import { evaluateTradeOutcome, type TradeRecord } from "./tradeHistory";
+import type { Candle, Zone } from "./types";
 
-/**
- * Everything about a trade setup that must stay fixed forever once a
- * visitor first sees it — the fields tradeLedger.ts freezes in the
- * `trade_plans` table.
- */
-export interface FrozenTradePlanFields {
-  entry: number;
-  stopLoss: number;
-  targets: number[];
-  riskRewardRatios: number[];
-  confidenceScore: number;
-  zone: Zone;
-  /**
-   * The entry candle's own timestamp, frozen alongside everything else —
-   * the authoritative anchor for "has this hit a target yet" checks
-   * (evaluateTradeOutcome), which should use this directly instead of
-   * re-deriving the entry candle's position via findEntryIndices against
-   * today's candle window. For a retest past the first, that re-derivation
-   * requires replaying the *entire* "left, then came back" sequence from
-   * scratch, which can silently fail to relocate the same candle as the
-   * window drifts — confirmed directly against live data (SOL/1h, retest
-   * #2): getTradePlanProgress kept returning highestTargetHit: 0 long
-   * after a candle had clearly closed above target 1, because
-   * findEntryIndices no longer reconstructed the same entry against the
-   * day's later candle window.
-   */
-  loggedAt: number;
-}
-
-export interface TradePlanCandidate extends FrozenTradePlanFields {
-  /** `${symbol}:${timeframe}:${zone.id}:${retestNumber}` — matches TradeRecord.id. */
+interface SignalRow {
   id: string;
-  symbol: string;
-  timeframe: string;
-  retestNumber: number;
-  loggedAt: number;
-}
-
-interface TradePlanRow {
-  id: string;
+  logged_at: string | number;
+  retest_number: number;
   entry: number;
   stop_loss: number;
   targets: number[];
   risk_reward_ratios: number[];
-  confidence_score: number;
+  confidence: TradeConfidence;
   zone: Zone;
-  logged_at: number;
+  highest_target_hit: number;
+  stopped_out: boolean;
+  resolved: boolean;
+  resolved_at: string | number | null;
 }
 
-/**
- * Every candidate trade setup here was just freshly recomputed from
- * whatever the live candle/zone data looks like *right now* — accurate for
- * a setup nobody has seen yet, but wrong for one that already exists:
- * detectZones/detectSearchableZones are always re-run from scratch on
- * every request, so a supply zone's own active status (and therefore
- * which one a target picks) keeps changing long after a trade first
- * appeared or even resolved. Left unchecked, a resolved trade's own
- * recorded targets — and the confidence score derived from the same zone
- * map — would silently keep drifting on every future page load, which is
- * exactly the "the targets I saw live don't match what's in the history
- * now" mismatch a live comparison (SAND/1h) confirmed even after the
- * no-look-ahead fix (candles.slice(0, entryIndex + 1)) closed the
- * *future*-data half of the problem: two separate requests (the live
- * dashboard, the history/opportunities scan) still each independently
- * re-fetch and re-derive "the zone map as of entry" from whatever candle
- * window Binance happens to hand back at that exact moment, and those two
- * windows are never guaranteed byte-identical.
- *
- * The only way to guarantee a trade's own numbers stay exactly what a
- * visitor actually saw is to stop recomputing them after the first
- * sighting: this function looks up every candidate by id, freezes
- * (inserts) whichever ones aren't in `trade_plans` yet using the value
- * just computed for them, and returns the *stored* fields for every id —
- * the ones just inserted for a genuinely new setup, or the untouched
- * original for one already logged. Callers should overwrite their own
- * freshly-computed entry/stopLoss/targets/riskRewardRatios/
- * confidenceScore/zone with whatever this returns before doing anything
- * else with them (evaluating the outcome against current candles is still
- * fine to do fresh every time — only the setup's own definition needs to
- * be fixed, not how far price has since moved against it).
- *
- * Never throws: a database hiccup here shouldn't take down the whole
- * opportunities/history page, so on any error every candidate's own
- * freshly-computed fields are returned unfrozen instead (the same
- * behavior this whole function exists to fix, but only for that one
- * request rather than a hard failure).
- */
-export async function freezeTradePlans(
-  candidates: TradePlanCandidate[]
-): Promise<Map<string, FrozenTradePlanFields>> {
-  const result = new Map<string, FrozenTradePlanFields>();
-  if (candidates.length === 0) return result;
-
-  try {
-    await ensureSchema();
-    const db = sql();
-    const ids = candidates.map((c) => c.id);
-
-    const existingRows = (await db`
-      select id, entry, stop_loss, targets, risk_reward_ratios, confidence_score, zone, logged_at
-      from trade_plans
-      where id = any(${ids})
-    `) as TradePlanRow[];
-
-    for (const row of existingRows) {
-      result.set(row.id, {
-        entry: Number(row.entry),
-        stopLoss: Number(row.stop_loss),
-        targets: row.targets,
-        riskRewardRatios: row.risk_reward_ratios,
-        confidenceScore: row.confidence_score,
-        zone: row.zone,
-        loggedAt: Number(row.logged_at),
-      });
-    }
-
-    const missing = candidates.filter((c) => !result.has(c.id));
-    for (const c of missing) {
-      // on conflict do nothing: two concurrent requests racing to log the
-      // same brand-new setup both attempt the insert, but only one wins —
-      // harmless either way since both were about to write identical data
-      // freshly computed from the same live state.
-      await db`
-        insert into trade_plans
-          (id, symbol, timeframe, retest_number, logged_at, entry, stop_loss, targets, risk_reward_ratios, confidence_score, zone)
-        values (
-          ${c.id}, ${c.symbol}, ${c.timeframe}, ${c.retestNumber}, ${c.loggedAt},
-          ${c.entry}, ${c.stopLoss}, ${JSON.stringify(c.targets)}::jsonb,
-          ${JSON.stringify(c.riskRewardRatios)}::jsonb, ${c.confidenceScore}, ${JSON.stringify(c.zone)}::jsonb
-        )
-        on conflict (id) do nothing
-      `;
-      result.set(c.id, {
-        entry: c.entry,
-        stopLoss: c.stopLoss,
-        targets: c.targets,
-        riskRewardRatios: c.riskRewardRatios,
-        confidenceScore: c.confidenceScore,
-        zone: c.zone,
-        loggedAt: c.loggedAt,
-      });
-    }
-  } catch {
-    for (const c of candidates) {
-      if (!result.has(c.id)) {
-        result.set(c.id, {
-          entry: c.entry,
-          stopLoss: c.stopLoss,
-          targets: c.targets,
-          riskRewardRatios: c.riskRewardRatios,
-          confidenceScore: c.confidenceScore,
-          zone: c.zone,
-          loggedAt: c.loggedAt,
-        });
-      }
-    }
-  }
-
-  return result;
-}
-
-/**
- * A single id's stored row, if any — no entry-candle re-derivation needed
- * at all, unlike freezeTradePlans' insert path. freezeLiveTradePlan checks
- * this *before* attempting to relocate today's entry candle, specifically
- * so an already-frozen trade never depends on that relocation succeeding.
- * Never throws — a lookup failure here is treated the same as "not frozen
- * yet" by the caller.
- */
-async function lookupFrozenTradePlan(id: string): Promise<FrozenTradePlanFields | null> {
-  try {
-    await ensureSchema();
-    const db = sql();
-    const rows = (await db`
-      select entry, stop_loss, targets, risk_reward_ratios, confidence_score, zone, logged_at
-      from trade_plans
-      where id = ${id}
-      limit 1
-    `) as TradePlanRow[];
-    if (rows.length === 0) return null;
-    const row = rows[0];
-    return {
-      entry: Number(row.entry),
-      stopLoss: Number(row.stop_loss),
-      targets: row.targets,
-      riskRewardRatios: row.risk_reward_ratios,
-      confidenceScore: row.confidence_score,
-      zone: row.zone,
-      loggedAt: Number(row.logged_at),
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Freezes a single live-computed TradePlan (see freezeTradePlans' own doc
- * comment) and returns it with entry/stopLoss/targets/riskRewardRatios/zone
- * overwritten by whatever's actually stored — the shared helper both the
- * opportunities scan and the single-coin dashboard's own trade-plan
- * endpoint use, so a setup first seen through either one freezes with an
- * identical id and identical fields.
- */
-export async function freezeLiveTradePlan(
-  tradePlan: TradePlan,
-  candles: Candle[],
-  symbol: string,
-  timeframe: string
-): Promise<{ tradePlan: TradePlan; confidenceScore: number; loggedAt: number }> {
-  const id = `${symbol}:${timeframe}:${tradePlan.zone.id}:${tradePlan.retestNumber}`;
-
-  // Check the ledger *before* trying to relocate this entry's own position
-  // in today's candles — a retest past the first can fail that relocation
-  // (findEntryIndices replaying the whole "left, then came back" sequence
-  // against a candle window that's drifted since) even for a trade that
-  // was already frozen correctly the first time it was seen. Falling
-  // through to the fallback below in that case would silently discard the
-  // real loggedAt for a "now" placeholder — confirmed directly against a
-  // real pending record (APT/4h retest #2): its chart box collapsed to
-  // zero width (startTime ≈ endTime ≈ "now"), rendering nothing at all,
-  // not even the Entry line, exactly the "the trade wasn't fixed" report.
-  const existing = await lookupFrozenTradePlan(id);
-  if (existing) {
-    return {
-      tradePlan: {
-        ...tradePlan,
-        entry: existing.entry,
-        stopLoss: existing.stopLoss,
-        targets: existing.targets,
-        riskRewardRatios: existing.riskRewardRatios,
-        zone: existing.zone,
-      },
-      confidenceScore: existing.confidenceScore,
-      loggedAt: existing.loggedAt,
-    };
-  }
-
-  // Not frozen yet — a genuinely new setup, so its entry candle needs
-  // locating once to log it for the first time.
-  const entryIndices = findEntryIndices(candles, tradePlan.zone.endTime, tradePlan.zone.top, tradePlan.zone.bottom);
-  const entryIndex = entryIndices[tradePlan.retestNumber - 1];
-  if (entryIndex === undefined) {
-    // Shouldn't happen for a plan buildTradePlan itself just returned, but
-    // falls back to the freshly-computed (unfrozen) plan rather than
-    // throwing if it somehow does.
-    return { tradePlan, confidenceScore: 0, loggedAt: candles[candles.length - 1]?.time ?? 0 };
-  }
-
-  const candlesAtEntry = candles.slice(0, entryIndex + 1);
-  const zonesAsOfEntry = detectSearchableZones(candlesAtEntry);
-  const confidence = scoreTradeConfidence(tradePlan, zonesAsOfEntry, candlesAtEntry, null);
-
-  const frozen = await freezeTradePlans([
-    {
-      id,
-      symbol,
-      timeframe,
-      retestNumber: tradePlan.retestNumber,
-      loggedAt: candles[entryIndex].time,
-      entry: tradePlan.entry,
-      stopLoss: tradePlan.stopLoss,
-      targets: tradePlan.targets,
-      riskRewardRatios: tradePlan.riskRewardRatios,
-      confidenceScore: confidence.score,
-      zone: tradePlan.zone,
-    },
-  ]);
-
-  const fields = frozen.get(id);
-  if (!fields) return { tradePlan, confidenceScore: confidence.score, loggedAt: candles[entryIndex].time };
-
+function rowToRecord(row: SignalRow, symbol: string, timeframe: Timeframe): TradeRecord {
   return {
-    tradePlan: {
-      ...tradePlan,
-      entry: fields.entry,
-      stopLoss: fields.stopLoss,
-      targets: fields.targets,
-      riskRewardRatios: fields.riskRewardRatios,
-      zone: fields.zone,
-    },
-    confidenceScore: fields.confidenceScore,
-    loggedAt: fields.loggedAt,
+    id: row.id,
+    symbol,
+    timeframe,
+    loggedAt: Number(row.logged_at),
+    entry: Number(row.entry),
+    stopLoss: Number(row.stop_loss),
+    targets: row.targets,
+    riskRewardRatios: row.risk_reward_ratios,
+    zone: row.zone,
+    retestNumber: row.retest_number,
+    confidenceScore: row.confidence.score,
+    confidence: row.confidence,
+    highestTargetHit: row.highest_target_hit,
+    stoppedOut: row.stopped_out,
+    resolved: row.resolved,
+    resolvedAt: row.resolved_at === null ? null : Number(row.resolved_at),
   };
+}
+
+function signalToRecord(signal: Signal): TradeRecord {
+  return {
+    id: signal.id,
+    symbol: signal.symbol,
+    timeframe: signal.timeframe,
+    loggedAt: signal.loggedAt,
+    entry: signal.entry,
+    stopLoss: signal.stopLoss,
+    targets: signal.targets,
+    riskRewardRatios: signal.riskRewardRatios,
+    zone: signal.zone,
+    retestNumber: signal.retestNumber,
+    confidenceScore: signal.confidence.score,
+    confidence: signal.confidence,
+    highestTargetHit: 0,
+    stoppedOut: false,
+    resolved: false,
+    resolvedAt: null,
+  };
+}
+
+/** A fully-resolved-before-launch signal was never shown to anyone live — see HISTORY_START_TIME. */
+function isPublic(record: TradeRecord): boolean {
+  return !(record.resolved && record.resolvedAt !== null && record.resolvedAt < HISTORY_START_TIME);
+}
+
+export interface PairSignals {
+  /** Every public signal for the pair, oldest first, with its outcome as of right now. */
+  records: TradeRecord[];
+  /** The candles the outcomes were evaluated against (last one may still be forming); empty when no fetch was needed. */
+  candles: Candle[];
+}
+
+async function loadLedger(symbol: string, timeframe: Timeframe) {
+  await ensureSchema();
+  const db = sql();
+  const [rows, scans] = (await Promise.all([
+    db`
+      select id, logged_at, retest_number, entry, stop_loss, targets, risk_reward_ratios, confidence, zone,
+             highest_target_hit, stopped_out, resolved, resolved_at
+      from trade_signals
+      where symbol = ${symbol} and timeframe = ${timeframe} and engine_version = ${ENGINE_VERSION}
+    `,
+    db`
+      select scanned_through from signal_scans
+      where symbol = ${symbol} and timeframe = ${timeframe} and engine_version = ${ENGINE_VERSION}
+    `,
+  ])) as [SignalRow[], { scanned_through: string | number }[]];
+  return {
+    db,
+    stored: rows.map((r) => rowToRecord(r, symbol, timeframe)),
+    scannedThrough: scans.length > 0 ? Number(scans[0].scanned_through) : null,
+  };
+}
+
+async function syncSignalsUncached(symbol: string, timeframe: Timeframe): Promise<PairSignals> {
+  const now = Math.floor(Date.now() / 1000);
+  const span = TIMEFRAME_SECONDS[timeframe];
+
+  // The ledger is what keeps a signal fixed forever once decided, but the
+  // engine itself is deterministic, so if the database is unreachable the
+  // same signals are simply recomputed (and not persisted) for this request.
+  let ledger: Awaited<ReturnType<typeof loadLedger>> | null = null;
+  try {
+    ledger = await loadLedger(symbol, timeframe);
+  } catch {
+    ledger = null;
+  }
+
+  const stored = ledger?.stored ?? [];
+  const scanFrom = ledger?.scannedThrough != null ? ledger.scannedThrough + span : scanStartTime(timeframe);
+  const oldestOpen = stored.filter((r) => !r.resolved).reduce((min, r) => Math.min(min, r.loggedAt), Infinity);
+  // Binance candles are aligned to the epoch, so this is the open time of
+  // the most recent candle that has fully closed.
+  const lastClosedOpenTime = Math.floor((now - CLOSE_SETTLE_SECONDS) / span) * span - span;
+  const needsScan = scanFrom <= lastClosedOpenTime;
+
+  // Nothing new has closed and nothing is open: the stored ledger is
+  // already the complete, final answer — no exchange request needed.
+  if (!needsScan && oldestOpen === Infinity) {
+    return { records: stored.filter(isPublic).sort((a, b) => a.loggedAt - b.loggedAt), candles: [] };
+  }
+
+  // A few spare candles beyond the window so an exchange gap never leaves
+  // an entry candle short of a full ENGINE_WINDOW.
+  const dataStart = needsScan ? Math.min(scanFrom - (ENGINE_WINDOW + 10) * span, oldestOpen) : oldestOpen;
+
+  const [candles, dailyCandles] = await Promise.all([
+    getCandlesSince(symbol, timeframe, dataStart),
+    timeframe === "1d" || !needsScan
+      ? Promise.resolve(null)
+      : getCandlesSince(symbol, "1d", scanFrom - (ENGINE_WINDOW + 10) * TIMEFRAME_SECONDS["1d"]),
+  ]);
+  const closed = closedCandles(candles, timeframe, now);
+  const formingCandleTime = candles.length > closed.length ? candles[closed.length].time : Number.POSITIVE_INFINITY;
+  const dailyClosed = dailyCandles ? closedCandles(dailyCandles, "1d", now) : null;
+
+  const storedIds = new Set(stored.map((r) => r.id));
+  const fresh = (needsScan ? scanSignals(symbol, timeframe, closed, scanFrom, dailyClosed) : [])
+    .filter((s) => !storedIds.has(s.id))
+    .map(signalToRecord);
+
+  // Outcome as of the last *closed* candle is what gets persisted — final,
+  // never revised. The live view layered on top may additionally count a
+  // target the forming candle has already reached (see evaluateTradeOutcome).
+  const settledStored = stored.map((r) => evaluateTradeOutcome(r, closed));
+  const settledFresh = fresh.map((r) => evaluateTradeOutcome(r, closed));
+
+  if (ledger) {
+    const { db } = ledger;
+    try {
+      for (const r of settledFresh) {
+        await db`
+          insert into trade_signals
+            (id, engine_version, symbol, timeframe, logged_at, retest_number, entry, stop_loss, targets,
+             risk_reward_ratios, confidence, zone, highest_target_hit, stopped_out, resolved, resolved_at)
+          values (
+            ${r.id}, ${ENGINE_VERSION}, ${symbol}, ${timeframe}, ${r.loggedAt}, ${r.retestNumber}, ${r.entry},
+            ${r.stopLoss}, ${JSON.stringify(r.targets)}::jsonb, ${JSON.stringify(r.riskRewardRatios)}::jsonb,
+            ${JSON.stringify(r.confidence)}::jsonb, ${JSON.stringify(r.zone)}::jsonb, ${r.highestTargetHit},
+            ${r.stoppedOut}, ${r.resolved}, ${r.resolvedAt}
+          )
+          on conflict (id) do nothing
+        `;
+      }
+      for (let i = 0; i < stored.length; i++) {
+        const before = stored[i];
+        const after = settledStored[i];
+        if (after.resolved === before.resolved && after.highestTargetHit === before.highestTargetHit) continue;
+        await db`
+          update trade_signals
+          set highest_target_hit = greatest(highest_target_hit, ${after.highestTargetHit}),
+              stopped_out = ${after.stoppedOut},
+              resolved = ${after.resolved},
+              resolved_at = ${after.resolvedAt}
+          where id = ${after.id} and resolved = false
+        `;
+      }
+      if (needsScan && closed.length > 0) {
+        const through = closed[closed.length - 1].time;
+        await db`
+          insert into signal_scans (symbol, timeframe, engine_version, scanned_through)
+          values (${symbol}, ${timeframe}, ${ENGINE_VERSION}, ${through})
+          on conflict (symbol, timeframe, engine_version)
+          do update set scanned_through = greatest(signal_scans.scanned_through, excluded.scanned_through),
+                        updated_at = now()
+        `;
+      }
+    } catch {
+      // A failed write only means this request's new signals get written
+      // by the next one instead — they're recomputed identically.
+    }
+  }
+
+  const records = [...settledStored, ...settledFresh]
+    .map((r) => evaluateTradeOutcome(r, candles, formingCandleTime))
+    .filter(isPublic)
+    .sort((a, b) => a.loggedAt - b.loggedAt);
+
+  return { records, candles };
+}
+
+const inflight = new Map<string, Promise<PairSignals>>();
+
+/**
+ * Brings the pair's ledger up to date (scans every newly closed candle
+ * exactly once, resolves open signals against closed candles) and returns
+ * every public signal with its current outcome. Every page — the coin
+ * dashboard, opportunities, history, and the track record — reads trades
+ * from here and nowhere else, so they can't disagree with each other.
+ */
+export function syncSignals(symbol: string, timeframe: Timeframe): Promise<PairSignals> {
+  const key = `${symbol}:${timeframe}`;
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const promise = syncSignalsUncached(symbol, timeframe).finally(() => inflight.delete(key));
+  inflight.set(key, promise);
+  return promise;
+}
+
+/**
+ * The open signal to feature on the pair's dashboard: among every signal
+ * not yet resolved, the one whose zone sits closest to the current price.
+ */
+export function pickLiveSignal(records: TradeRecord[], currentPrice: number): TradeRecord | null {
+  const open = records.filter((r) => !r.resolved);
+  if (open.length === 0) return null;
+  return open.reduce((best, r) =>
+    Math.abs(r.zone.top - currentPrice) < Math.abs(best.zone.top - currentPrice) ||
+    (Math.abs(r.zone.top - currentPrice) === Math.abs(best.zone.top - currentPrice) && r.loggedAt > best.loggedAt)
+      ? r
+      : best
+  );
 }

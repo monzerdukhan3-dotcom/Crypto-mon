@@ -53,8 +53,8 @@ export default function TrackRecordPage() {
       <div className="flex w-full max-w-3xl flex-col items-center gap-4 text-center">
         <h1 className="text-3xl font-extrabold text-foreground">سجل الأداء الحقيقي</h1>
         <p className="max-w-xl text-sm leading-relaxed text-muted">
-          أرقام حقيقية 100% محسوبة من نفس بيانات السوق الحية (Binance) التي يعرضها الشارت — ليست تجربة أو محاكاة.
-          كل صفقة هنا نتيجة اكتشاف آلي لمنطقة طلب صالحة، ثم عودة سعر حقيقية إليها
+          أرقام محسوبة من بيانات السوق الحقيقية (Binance). كل صفقة قُرّرت لحظة إغلاق شمعة دخولها من البيانات المتاحة
+          حتى تلك اللحظة فقط، ثم حُفظت بشكل دائم دون أي تعديل لاحق — عودة سعر حقيقية لمنطقة طلب صالحة ومؤكَّدة
           {stats ? `، محلّلة على ${stats.symbolsCovered} عملة عبر ${stats.timeframesCovered} أطر زمنية.` : "."}
         </p>
       </div>
@@ -102,7 +102,8 @@ export default function TrackRecordPage() {
 
       <p className="mt-8 max-w-xl text-center text-xs leading-relaxed text-muted">
         هذا تحليل فني آلي وليس نصيحة استثمارية. الأداء السابق لا يضمن نتائج مستقبلية. تُحسب الأرقام تلقائيًا من نفس
-        السجل الذي يراه كل مشترك في صفحة «سجل الصفقات» — لا يوجد أي انتقاء يدوي للصفقات المعروضة هنا.
+        السجل الذي يراه كل مشترك في صفحة «سجل الصفقات» — لا يوجد أي انتقاء يدوي للصفقات المعروضة هنا. متوسط العائد
+        يفترض الخروج الكامل عند أعلى هدف تحقق للصفقة الرابحة، و‎-1R للصفقة التي ضربت الوقف قبل أي هدف.
       </p>
 
       <Link

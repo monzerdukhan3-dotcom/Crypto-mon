@@ -1,38 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES } from "@/lib/constants";
+import { SUPPORTED_SYMBOLS, TIMEFRAMES, TRADE_SUGGESTION_TIMEFRAMES } from "@/lib/constants";
 import { getCandles } from "@/lib/marketData";
-import { buildTradePlan } from "@/lib/tradePlan";
-import { freezeLiveTradePlan } from "@/lib/tradeLedger";
-import { detectSearchableZones } from "@/lib/zones";
+import { pickLiveSignal, syncSignals } from "@/lib/tradeLedger";
 import type { Timeframe } from "@/lib/constants";
 
 const SYMBOL_PATTERN = /^[A-Za-z0-9]{1,15}$/;
 
-// Matches /api/candles' own underlying cache window — this route re-fetches
-// the same candles server-side (needed to freeze against the ledger; see
-// freezeLiveTradePlan's own doc comment on why the single-coin dashboard
-// can't just keep computing this client-side), so there's no reason to
-// recompute more often than the candles themselves actually change.
 export const revalidate = 30;
+export const maxDuration = 60;
 
 /**
- * The live dashboard's own trade-plan lookup — kept as a server route
- * (rather than the plain buildTradePlan() call AnalysisDashboard used to
- * make directly, client-side) specifically so it can freeze the setup's
- * own definition via tradeLedger.ts, the same way /api/opportunities and
- * /api/trade-history already do. Without this, the live dashboard's own
- * number for a brand-new setup could permanently disagree with what
- * /history later logs for the identical trade — confirmed directly
- * against live data (SAND/1h): two independent requests each re-derive
- * "the zone map as of entry" from whichever candle window Binance happens
- * to hand back at that exact moment, which isn't guaranteed to match.
+ * The coin dashboard's open trade: read from the same ledger /history,
+ * /opportunities and the track record read (see tradeLedger.ts), so the
+ * trade shown here is byte-for-byte the record those pages show.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const symbol = searchParams.get("symbol");
+  const symbol = searchParams.get("symbol")?.toUpperCase();
   const timeframe = searchParams.get("timeframe");
 
-  if (!symbol || !SYMBOL_PATTERN.test(symbol)) {
+  if (!symbol || !SYMBOL_PATTERN.test(symbol) || !SUPPORTED_SYMBOLS.some((s) => s.symbol === symbol)) {
     return NextResponse.json({ error: "Invalid symbol" }, { status: 400 });
   }
   if (!TIMEFRAMES.some((t) => t.value === timeframe)) {
@@ -45,26 +32,16 @@ export async function GET(request: NextRequest) {
   try {
     const tf = timeframe as Timeframe;
     if (!TRADE_SUGGESTION_TIMEFRAMES.includes(tf)) {
-      return NextResponse.json({ tradePlan: null, confidenceScore: null, loggedAt: null });
+      return NextResponse.json({ signal: null });
     }
-
-    const [candles, dailyCandles] = await Promise.all([
-      getCandles(symbol, tf),
-      tf === "1d" ? Promise.resolve(null) : getCandles(symbol, "1d").catch(() => null),
-    ]);
-    if (candles.length === 0) {
+    // The chart's own (cached) candles only supply the current price used to
+    // pick which open trade to feature — never any trade decision.
+    const [{ records }, chartCandles] = await Promise.all([syncSignals(symbol, tf), getCandles(symbol, tf)]);
+    if (chartCandles.length === 0) {
       return NextResponse.json({ error: "No candle data" }, { status: 502 });
     }
-
-    const currentPrice = candles[candles.length - 1].close;
-    const zones = detectSearchableZones(candles, { higherTimeframeCandles: dailyCandles });
-    const rawTradePlan = buildTradePlan(zones, currentPrice, candles);
-    if (!rawTradePlan) {
-      return NextResponse.json({ tradePlan: null, confidenceScore: null, loggedAt: null });
-    }
-
-    const { tradePlan, confidenceScore, loggedAt } = await freezeLiveTradePlan(rawTradePlan, candles, symbol, tf);
-    return NextResponse.json({ tradePlan, confidenceScore, loggedAt });
+    const signal = pickLiveSignal(records, chartCandles[chartCandles.length - 1].close);
+    return NextResponse.json({ signal });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to compute trade plan" },

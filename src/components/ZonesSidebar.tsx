@@ -35,9 +35,13 @@ interface ZonesSidebarProps {
   symbol: string;
   zones: Zone[];
   tradePlan: TradePlan | null;
+  /** Open time of the open trade's entry candle, as stored in the ledger. */
+  tradeLoggedAt: number | null;
+  /** True once a closed candle has closed at or below the open trade's stop. */
+  tradeStoppedOut: boolean;
   approachingZone: Zone | null;
   /**
-   * Whether, as of right now, buildTradePlan's own trend gate would accept
+   * Whether, as of right now, the signal engine's trend gate would accept
    * a return to approachingZone — see OpportunityResult's identical field
    * for the full reasoning. Only meaningful alongside approachingZone.
    */
@@ -169,6 +173,8 @@ export default function ZonesSidebar({
   symbol,
   zones,
   tradePlan,
+  tradeLoggedAt,
+  tradeStoppedOut,
   approachingZone,
   approachingTrendReady,
   recentlyBrokenZone,
@@ -236,6 +242,16 @@ export default function ZonesSidebar({
           )}
           {tradePlan ? (
             <>
+              {tradeLoggedAt !== null && (
+                <Note tone="info" icon={Crosshair}>
+                  صفقة مفتوحة منذ إغلاق شمعة {formatDate(tradeLoggedAt)} — مسجّلة في سجل الصفقات بنفس الأرقام تمامًا.
+                </Note>
+              )}
+              {tradeStoppedOut && (
+                <Note tone="danger" icon={AlertTriangle}>
+                  أُغلقت هذه الصفقة: أغلقت شمعة عند وقف الخسارة أو تحته.
+                </Note>
+              )}
               {tradePlan.retestNumber > 1 && (
                 <Note tone="info" icon={Layers}>
                   هذه إعادة اختبار رقم {tradePlan.retestNumber} لهذه المنطقة — نجحت من قبل، لكن الثقة أقل من دخول
@@ -261,10 +277,17 @@ export default function ZonesSidebar({
             </>
           ) : approachingZone ? (
             <>
-              <Note tone="info" icon={Bell}>
-                السعر يقترب من منطقة طلب عند {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)}
-                — جهّز أمر شراء معلّق عندها.
-              </Note>
+              {currentPrice <= approachingZone.top ? (
+                <Note tone="info" icon={Bell}>
+                  السعر داخل منطقة الطلب {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)} الآن —
+                  تُفتح الصفقة وتُسجَّل فقط إذا أغلقت الشمعة الحالية داخل المنطقة (مع استيفاء باقي الشروط).
+                </Note>
+              ) : (
+                <Note tone="info" icon={Bell}>
+                  السعر يقترب من منطقة طلب عند {formatPrice(approachingZone.bottom)}–{formatPrice(approachingZone.top)}
+                  — جهّز أمر شراء معلّق عندها.
+                </Note>
+              )}
               {!approachingTrendReady && (
                 <Note tone="warning" icon={AlertTriangle}>
                   الاتجاه العام هابط حاليًا — لن تُفتح صفقة عند وصول السعر لهذه المنطقة ما لم يتحول الاتجاه أولًا.
@@ -274,8 +297,7 @@ export default function ZonesSidebar({
             </>
           ) : !tradeSuggestionsEnabled ? (
             <EmptyState icon={Target}>
-              خطط الصفقات معطّلة على فريم 15 دقيقة (نسبة نجاح حقيقية ~43% فقط في السجل) — الشارت والمناطق أدناه
-              يبقيان متاحين لمتابعة الحركة فقط.
+              خطط الصفقات معطّلة على فريم 15 دقيقة — الشارت والمناطق أدناه يبقيان متاحين لمتابعة الحركة فقط.
             </EmptyState>
           ) : (
             <EmptyState icon={Target}>لا توجد منطقة طلب نشطة أسفل السعر الحالي حاليًا.</EmptyState>

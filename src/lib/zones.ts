@@ -414,8 +414,8 @@ interface EvaluatedZonesResult {
 /**
  * Shared pipeline behind both detectZones (the live chart's view: only
  * currently-active zones, filtered and capped down to the strongest few)
- * and detectZoneHistory (the trade-history backtest's view: every zone that
- * ever validly formed, broken or not, uncapped). Runs validation ("اثبات"),
+ * and detectSearchableZones (every zone that validly formed in the window,
+ * broken or not, uncapped — what the signal engine searches). Runs validation ("اثبات"),
  * merging, scoring, and the room-to-run filter — everything that doesn't
  * depend on whether a zone has since broken or is still near the price.
  */
@@ -536,10 +536,15 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
   const minDistanceFromPrice = referenceAtr !== null ? referenceAtr * minDistanceFromPriceAtrRatio : 0;
 
   // Higher-timeframe confluence (condition 10) — one level up only, no
-  // further recursion, and skipped entirely when not provided.
+  // further recursion, and skipped entirely when not provided. Every
+  // still-active HTF zone counts, not just detectZones' display set: that
+  // set drops zones within half an ATR of the HTF's current price and caps
+  // to the top few, which removed the daily zone precisely when price was
+  // sitting on it — measured on real data, the overlap override fired on 3
+  // of 354 zone touches instead of 33.
   const higherTimeframeZones =
     higherTimeframeCandles && higherTimeframeCandles.length > 0
-      ? detectZones(higherTimeframeCandles, { ...options, higherTimeframeCandles: null })
+      ? computeEvaluatedZones(higherTimeframeCandles, { ...options, higherTimeframeCandles: null }).activeOnly
       : [];
 
   function htfConfluenceFor(zone: { type: ZoneType; top: number; bottom: number }): "aligned" | "opposing" | "none" {
@@ -555,14 +560,14 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
   // "تداخل المناطق" — actually sharing a price with a same-type
   // higher-timeframe zone, not merely sitting nearby like the softer
   // confluence score above. This is what's allowed to override a broken or
-  // bearish entry-timeframe trend (see buildTradePlan).
+  // bearish entry-timeframe trend (see signalEngine.ts).
   function htfOverlapFor(zone: { type: ZoneType; top: number; bottom: number }): boolean {
     return higherTimeframeZones.some((h) => h.type === zone.type && h.bottom <= zone.top && h.top >= zone.bottom);
   }
 
   // Every validated candidate gets evaluated and scored, whether it's still
-  // active or has since broken — detectZoneHistory needs the broken ones
-  // too, for a full backtest of what would have traded and how it resolved.
+  // active or has since broken — detectSearchableZones exposes the broken
+  // ones too (the engine itself refuses entries on a broken zone).
   const evaluatedZones: (Zone & { pivotIndex: number })[] = [];
   for (const candidate of merged) {
     const { active, testCount, hasQuickReturn } = evaluateZoneRange(
@@ -602,7 +607,7 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
   // own height — no room left to run before hitting resistance/support.
   // An opposing zone price has already closed decisively through isn't a
   // live obstacle anymore, so it's excluded here even though it's still
-  // included (as broken) in detectZoneHistory's own output.
+  // included (as broken) in detectSearchableZones' own output.
   const withRoomToRun = evaluatedZones.filter((zone) => {
     const zoneHeight = zone.top - zone.bottom;
     const opposing = evaluatedZones.filter((other) => other.type !== zone.type && other.active);
@@ -645,35 +650,13 @@ function computeEvaluatedZones(candles: Candle[], options: DetectZonesOptions): 
  * - only the strongest few zones of each type are kept
  */
 /**
- * Every validated, merged zone that passed room-to-run — deliberately the
- * same uncapped, unfiltered set detectZoneHistory's own `all` exposes for
- * the trade-history backtest, not detectZones' `activeOnly`. Meant for
- * anything that needs to find a genuinely open position rather than decide
- * what to draw, because a live position can still be genuinely open even
- * when:
- * - detectZones' top-N cap has since pushed its zone out of the ranking
- *   (a newer, stronger zone formed) — the position itself hasn't hit its
- *   stop or any target, only the chart's own cosmetic ranking changed.
- * - detectZones drops a zone within half an ATR of the current price as
- *   "too close to bother suggesting as a fresh entry" — but that's exactly
- *   the state a zone is in once price has actually returned into it and
- *   triggered a real position (distance 0).
- * - the zone itself has since gone `active: false` (a candle closed below
- *   its raw bottom) — but the trade's actual stop loss sits a buffer
- *   further below that raw bottom (see planFromZone's stopBufferRatio), so
- *   the position itself can still be genuinely open even once the zone box
- *   is marked broken for display purposes. buildTradePlan's own
- *   isEntryStillOpen check (using the real stop loss, not the zone's raw
- *   bottom) is what actually decides whether it's still open — the same
- *   check the trade-history backtest itself relies on, with no `.active`
- *   condition of its own either.
- * All three are exactly the class of failure detectZoneHistory's own
- * search already avoids for the trade-history backtest (see its own doc
- * comment); this gives the live dashboard and the opportunities scan the
- * same search, so a trade doesn't silently vanish from either one while
- * still showing as open in /history. Confirmed directly against live data
- * for all three (ARB/4h for the cap, ATOM/4h for the price-distance case,
- * FLOW/4h for the broken-zone-but-open-trade case).
+ * Every validated, merged zone in the window that passed room-to-run,
+ * uncapped and unfiltered by distance from price, broken ones included
+ * (`active: false`). The signal engine searches this set: the chart's
+ * display filters (top-N cap, "too close to price") are cosmetic and must
+ * never decide whether a trade exists — a zone price has just returned into
+ * is by definition "close to price". findEntryIndices refuses entries on a
+ * zone that has closed below its bottom.
  */
 export function detectSearchableZones(candles: Candle[], options: DetectZonesOptions = {}): Zone[] {
   const { all } = computeEvaluatedZones(candles, options);
@@ -721,17 +704,4 @@ export function detectZones(candles: Candle[], options: DetectZonesOptions = {})
   }
 
   return capped.sort((a, b) => a.startTime - b.startTime);
-}
-
-/**
- * Every zone that ever validly formed in this candle history, broken or
- * not, uncapped — for backtesting the full trade history rather than just
- * showing today's live setups. Each zone keeps its `pivotIndex` (the last
- * base candle) so a backtest can replay forward from the moment it formed.
- */
-export function detectZoneHistory(
-  candles: Candle[],
-  options: DetectZonesOptions = {}
-): (Zone & { pivotIndex: number })[] {
-  return computeEvaluatedZones(candles, options).all;
 }
