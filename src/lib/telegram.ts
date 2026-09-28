@@ -93,3 +93,26 @@ export async function editTelegramSignalMessage(messageId: number, text: string)
     throw error;
   }
 }
+
+// A separate chat from the public signals channel — for the owner alone, so
+// an internal "the database is down" or "a check failed" alert never lands
+// where subscribers can see it (which would itself be a credibility hit).
+// Same bot account (TELEGRAM_BOT_TOKEN) can be a member of both chats.
+function adminChatId(): string | null {
+  return process.env.TELEGRAM_ADMIN_CHAT_ID?.trim() || null;
+}
+
+export function isTelegramAdminAlertConfigured(): boolean {
+  return signalsBotToken() !== null && adminChatId() !== null;
+}
+
+/** Sends a one-off alert to the owner's own chat — never throws, since a failed alert shouldn't crash the health check that triggered it. */
+export async function sendTelegramAdminAlert(text: string): Promise<void> {
+  const chatId = adminChatId();
+  if (!chatId) return;
+  try {
+    await callTelegramApi("sendMessage", { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true });
+  } catch {
+    // Best-effort — the health-check report itself is still returned/logged either way.
+  }
+}
