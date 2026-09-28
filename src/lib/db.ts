@@ -76,17 +76,13 @@ export async function ensureTradeSignalsTables(): Promise<void> {
     )
   `;
   await db`create index if not exists trade_signals_pair_idx on trade_signals (symbol, timeframe, engine_version)`;
-  // Telegram channel posting state (telegramNotify.ts) — which message (if
-  // any) announced this signal, and the outcome fields as of the last time
-  // that message was written, so a later sync only re-posts on a genuine
-  // change (a target or the stop actually being hit) rather than on every
-  // run. tg_notified_hit defaults to -1 (never 0, a real "no target yet"
-  // value) so a freshly-inserted row with no message yet always reads as
-  // needing its first post regardless of its actual highest_target_hit.
-  await db`alter table trade_signals add column if not exists tg_message_id bigint`;
-  await db`alter table trade_signals add column if not exists tg_notified_hit integer not null default -1`;
-  await db`alter table trade_signals add column if not exists tg_notified_stopped boolean not null default false`;
-  await db`alter table trade_signals add column if not exists tg_notified_resolved boolean not null default false`;
+  // The public trade-signals Telegram bot project was cancelled; the
+  // columns it used to track posted/edited channel messages are dropped
+  // here rather than left dangling on a live table.
+  await db`alter table trade_signals drop column if exists tg_message_id`;
+  await db`alter table trade_signals drop column if exists tg_notified_hit`;
+  await db`alter table trade_signals drop column if exists tg_notified_stopped`;
+  await db`alter table trade_signals drop column if exists tg_notified_resolved`;
   await db`
     create table if not exists signal_scans (
       symbol text not null,

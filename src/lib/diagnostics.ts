@@ -2,7 +2,7 @@ import { SUPPORTED_SYMBOLS, TRADE_SUGGESTION_TIMEFRAMES, type Timeframe } from "
 import { ensureSchema, sql } from "./db";
 import { getCandles } from "./marketData";
 import { ENGINE_VERSION, HISTORY_START_TIME } from "./signalEngine";
-import { isTelegramSignalsConfigured } from "./telegram";
+import { isTelegramAdminAlertConfigured } from "./telegram";
 import { syncSignals } from "./tradeLedger";
 
 export interface DiagnosticCheck {
@@ -109,9 +109,9 @@ export async function runDiagnostics(rotationOffset: number = 0): Promise<Diagno
   }
 
   checks.push({
-    name: "telegram_configured",
+    name: "telegram_admin_alert_configured",
     ok: true, // informational only — not configuring it isn't a failure
-    detail: isTelegramSignalsConfigured() ? "configured" : "not configured",
+    detail: isTelegramAdminAlertConfigured() ? "configured" : "not configured",
   });
 
   // Ledger fidelity: a real historical row, read directly from the
