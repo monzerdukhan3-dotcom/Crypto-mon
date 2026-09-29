@@ -12,7 +12,14 @@ import { auth } from "@/lib/auth";
  *    is bounced to /pricing on every other route instead of the app itself.
  * A short public list (login/signup/pricing/track-record/legal pages, and
  * their own APIs) is excluded from this file entirely via `matcher` below,
- * so those stay reachable with no session at all.
+ * so those stay reachable with no session at all — /api/cron/* is in that
+ * list too, for a different reason: Vercel Cron invokes those routes
+ * server-to-server with an `Authorization: Bearer $CRON_SECRET` header, not
+ * a browser session, so gating them here would redirect every scheduled
+ * invocation to /login before it ever reached the route handler's own
+ * CRON_SECRET check — confirmed live (2026-09-29): /api/cron/health-check
+ * was returning a 307 to /login for every request, meaning the health
+ * check had never actually run since it was deployed.
  */
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
@@ -43,12 +50,14 @@ export default auth((req) => {
 
 export const config = {
   // Everything except NextAuth's own API routes, the fully-public pages
-  // (login/signup/pricing/track-record/legal) and their own APIs, static
-  // assets, and the PWA install files (manifest.webmanifest, sw.js, and
-  // the icons the manifest points at — a visitor's browser needs these to
-  // offer "install app" from the public pages too, before they've ever
-  // logged in) — those all need to stay reachable with no session.
+  // (login/signup/pricing/track-record/legal) and their own APIs, the
+  // server-to-server cron routes (their own CRON_SECRET check, not a user
+  // session, gates them), static assets, and the PWA install files
+  // (manifest.webmanifest, sw.js, and the icons the manifest points at —
+  // a visitor's browser needs these to offer "install app" from the public
+  // pages too, before they've ever logged in) — those all need to stay
+  // reachable with no session.
   matcher: [
-    "/((?!api/auth|api/register|api/track-record|login|signup|pricing|track-record|terms|privacy|_next/static|_next/image|favicon.ico|logo-mark.png|apple-icon.png|icon.png|manifest.webmanifest|sw.js|icon-192.png|icon-512.png|icon-maskable-512.png).*)",
+    "/((?!api/auth|api/register|api/track-record|api/cron|login|signup|pricing|track-record|terms|privacy|_next/static|_next/image|favicon.ico|logo-mark.png|apple-icon.png|icon.png|manifest.webmanifest|sw.js|icon-192.png|icon-512.png|icon-maskable-512.png).*)",
   ],
 };
