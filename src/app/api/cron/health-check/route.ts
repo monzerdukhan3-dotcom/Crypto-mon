@@ -22,11 +22,16 @@ function renderAlert(failed: { name: string; detail: string }[]): string {
  * moment something is actually broken — database down, Binance
  * unreachable, or a served trade's own numbers disagreeing with what's
  * permanently stored for it (see diagnostics.ts). This is the always-on
- * layer: it catches and pages for a failure the instant it happens,
+ * layer: it catches and pages for a failure within a day of it happening,
  * independent of whether anyone is actively watching or running a deeper
- * audit right now. `offset` rotates which pairs the (more expensive)
- * per-pair checks cover, based on the clock, so every pair gets swept over
- * many runs rather than none of them getting checked every single run.
+ * audit right now. Runs once daily rather than more often — confirmed
+ * live (2026-10-02): Vercel's Hobby plan silently refuses every deploy
+ * of a vercel.json whose cron fires more than once a day, which is what
+ * had been blocking every deploy since this project first added a cron
+ * job (2026-09-27). A faster cadence needs the Pro plan. `offset` rotates
+ * which pairs the (more expensive) per-pair checks cover, using the day
+ * number rather than finer-grained time so a new set is actually picked
+ * each day instead of nearly the same one every run.
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -37,7 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const offset = Math.floor(Date.now() / 1000 / 900); // a new rotation slot every 15 minutes
+  const offset = Math.floor(Date.now() / 1000 / 86400); // a new rotation slot every day
   const report = await runDiagnostics(offset);
 
   if (!report.ok) {
