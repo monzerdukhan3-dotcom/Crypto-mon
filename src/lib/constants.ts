@@ -21,7 +21,6 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   { symbol: "ETH", label: "Ethereum (ETH)", pair: "ETH_USDT", coingeckoId: "ethereum" },
   { symbol: "SOL", label: "Solana (SOL)", pair: "SOL_USDT", coingeckoId: "solana" },
   { symbol: "XRP", label: "XRP (XRP)", pair: "XRP_USDT", coingeckoId: "ripple" },
-  { symbol: "ADA", label: "Cardano (ADA)", pair: "ADA_USDT", coingeckoId: "cardano" },
   { symbol: "AVAX", label: "Avalanche (AVAX)", pair: "AVAX_USDT", coingeckoId: "avalanche-2" },
   { symbol: "LINK", label: "Chainlink (LINK)", pair: "LINK_USDT", coingeckoId: "chainlink" },
   { symbol: "DOT", label: "Polkadot (DOT)", pair: "DOT_USDT", coingeckoId: "polkadot" },
@@ -33,7 +32,6 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   { symbol: "SUI", label: "Sui (SUI)", pair: "SUI_USDT", coingeckoId: "sui" },
   { symbol: "SEI", label: "Sei (SEI)", pair: "SEI_USDT", coingeckoId: "sei-network" },
   { symbol: "TIA", label: "Celestia (TIA)", pair: "TIA_USDT", coingeckoId: "celestia" },
-  { symbol: "INJ", label: "Injective (INJ)", pair: "INJ_USDT", coingeckoId: "injective-protocol" },
   { symbol: "ICP", label: "Internet Computer (ICP)", pair: "ICP_USDT", coingeckoId: "internet-computer" },
   { symbol: "ETC", label: "Ethereum Classic (ETC)", pair: "ETC_USDT", coingeckoId: "ethereum-classic" },
   { symbol: "ALGO", label: "Algorand (ALGO)", pair: "ALGO_USDT", coingeckoId: "algorand" },
@@ -43,7 +41,6 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   { symbol: "CRV", label: "Curve DAO (CRV)", pair: "CRV_USDT", coingeckoId: "curve-dao-token" },
   { symbol: "SNX", label: "Synthetix (SNX)", pair: "SNX_USDT", coingeckoId: "havven" },
   { symbol: "GMX", label: "GMX (GMX)", pair: "GMX_USD", coingeckoId: "gmx" },
-  { symbol: "COMP", label: "Compound (COMP)", pair: "COMP_USDT", coingeckoId: "compound-governance-token" },
   { symbol: "1INCH", label: "1inch (1INCH)", pair: "1INCH_USDT", coingeckoId: "1inch" },
   { symbol: "FET", label: "Fetch.ai (FET)", pair: "FET_USDT", coingeckoId: "fetch-ai" },
   { symbol: "RENDER", label: "Render (RENDER)", pair: "RENDER_USDT", coingeckoId: "render-token" },
@@ -56,7 +53,6 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   // Polygon rebranded MATIC to POL — the exchange only lists the new ticker.
   { symbol: "POL", label: "Polygon (POL)", pair: "POL_USDT", coingeckoId: "polygon-ecosystem-token" },
   { symbol: "XLM", label: "Stellar (XLM)", pair: "XLM_USDT", coingeckoId: "stellar" },
-  { symbol: "VET", label: "VeChain (VET)", pair: "VET_USDT", coingeckoId: "vechain" },
   { symbol: "THETA", label: "Theta Network (THETA)", pair: "THETA_USDT", coingeckoId: "theta-token" },
   { symbol: "FLOW", label: "Flow (FLOW)", pair: "FLOW_USDT", coingeckoId: "flow" },
   { symbol: "CHZ", label: "Chiliz (CHZ)", pair: "CHZ_USDT", coingeckoId: "chiliz" },
@@ -82,7 +78,6 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   { symbol: "STX", label: "Stacks (STX)", pair: "STX_USDT", coingeckoId: "blockstack" },
   { symbol: "TAO", label: "Bittensor (TAO)", pair: "TAO_USD", coingeckoId: "bittensor" },
   { symbol: "JTO", label: "Jito (JTO)", pair: "JTO_USD", coingeckoId: "jito-governance-token" },
-  { symbol: "W", label: "Wormhole (W)", pair: "W_USD", coingeckoId: "wormhole" },
   { symbol: "ETHFI", label: "Ether.fi (ETHFI)", pair: "ETHFI_USD", coingeckoId: "ether-fi" },
   { symbol: "LPT", label: "Livepeer (LPT)", pair: "LPT_USDT", coingeckoId: "livepeer" },
   { symbol: "ARKM", label: "Arkham (ARKM)", pair: "ARKM_USD", coingeckoId: "arkham" },
@@ -94,6 +89,7 @@ export const SUPPORTED_SYMBOLS: SymbolInfo[] = [
   { symbol: "JOE", label: "JOE (JOE)", pair: "JOE_USD", coingeckoId: "joe" },
   { symbol: "ZK", label: "ZKsync (ZK)", pair: "ZK_USDT", coingeckoId: "zksync" },
   { symbol: "STG", label: "Stargate Finance (STG)", pair: "STG_USD", coingeckoId: "stargate-finance" },
+  { symbol: "APE", label: "ApeCoin (APE)", pair: "APE_USDT", coingeckoId: "apecoin" },
 ];
 
 export type Timeframe = "15m" | "1h" | "4h" | "1d";
