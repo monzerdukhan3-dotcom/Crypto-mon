@@ -18,11 +18,6 @@ const CACHE_KEY = "crypto-mon:opportunities-cache:v4";
 const BATCH_SIZE = 8;
 // How often to re-scan while this page stays open.
 const REFRESH_MS = 60_000;
-// Cap on how many "approaching" rows to render — with 76 coins × 4
-// timeframes, even a tight watch band can turn up more than anyone would
-// actually scan through; the closest ones (already sorted first) are what
-// matters.
-const APPROACHING_DISPLAY_LIMIT = 20;
 
 function timeframeLabel(timeframe: Timeframe): string {
   return TIMEFRAMES.find((t) => t.value === timeframe)?.label ?? timeframe;
@@ -317,15 +312,10 @@ export default function OpportunitiesView() {
             <div className="flex flex-col gap-3">
               <h3 className="text-sm font-semibold text-info">تقترب من منطقة الدخول ({approaching.length})</h3>
               <ul className="flex flex-col gap-3">
-                {approaching.slice(0, APPROACHING_DISPLAY_LIMIT).map((r) => (
+                {approaching.map((r) => (
                   <OpportunityRow key={`${r.symbol}:${r.timeframe}`} item={r} />
                 ))}
               </ul>
-              {approaching.length > APPROACHING_DISPLAY_LIMIT && (
-                <p className="text-center text-xs text-muted">
-                  + {approaching.length - APPROACHING_DISPLAY_LIMIT} عملة أخرى أبعد من ذلك، غير معروضة هنا
-                </p>
-              )}
             </div>
           )}
         </div>
