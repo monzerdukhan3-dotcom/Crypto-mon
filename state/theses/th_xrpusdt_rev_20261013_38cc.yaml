@@ -1,0 +1,77 @@
+thesis_id: th_xrpusdt_rev_20261013_38cc
+ticker: XRPUSDT
+created_at: '2026-10-13T00:00:00+00:00'
+updated_at: '2026-10-13T14:47:31+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: ACTIVE
+status_history:
+- status: IDEA
+  at: '2026-10-13T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-10-13T00:00:00+00:00'
+  reason: passed pre-trade gate GO 2026-10-13
+- status: ACTIVE
+  at: '2026-10-13T00:00:00+00:00'
+  reason: position opened
+thesis_statement: 'Binance spot demand-zone dip buy (half size, daily downtrend):
+  4h demand 1.3142-1.3288 (09-18 base, 2nd test). Close-stop 4h<1.2820, hard stop
+  1.2725, T1 1.4033, T2 1.4925 (net 2.65). Risk 3.75 USDT (0.75%).'
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: 0dd7aa498e428dc0
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 1.3288
+  actual_date: '2026-10-13T00:00:00+00:00'
+exit:
+  stop_loss: 1.2725
+  stop_loss_pct: null
+  take_profit: 1.4925
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: null
+  actual_date: null
+  exit_reason: null
+position:
+  shares: 62.1
+  shares_remaining: 62.1
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-11-12'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/gate/xrp.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: XRPUSDT
+    thesis_statement: 'Binance spot demand-zone dip buy (half size, daily downtrend):
+      4h demand 1.3142-1.3288 (09-18 base, 2nd test). Close-stop 4h<1.2820, hard stop
+      1.2725, T1 1.4033, T2 1.4925 (net 2.65). Risk 3.75 USDT (0.75%).'
+    thesis_type: mean_reversion
+    entry_price: 1.3288
+    entry_date: '2026-10-13'
+    shares: 62.1
+    stop_price: 1.2725
+    target_price: 1.4925
+linked_reports: []
+outcome:
+  pnl_dollars: null
+  pnl_pct: null
+  holding_days: null
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null
