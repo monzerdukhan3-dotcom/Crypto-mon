@@ -1,0 +1,82 @@
+thesis_id: th_avaxusdt_rev_20261015_6cf9
+ticker: AVAXUSDT
+created_at: '2026-10-15T00:00:00+00:00'
+updated_at: '2026-10-16T10:49:31+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: CLOSED
+status_history:
+- status: IDEA
+  at: '2026-10-15T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-10-15T00:00:00+00:00'
+  reason: planned zone filled
+- status: ACTIVE
+  at: '2026-10-15T00:00:00+00:00'
+  reason: position opened
+- status: CLOSED
+  at: '2026-10-16T10:49:31+00:00'
+  reason: 'closed: target_hit'
+  shares_sold: 12.34
+  price: 10.47
+  proceeds: 129.2
+  realized_pnl: 10.74
+thesis_statement: Binance spot demand-zone dip buy (4h-demand 9.499-9.60). Limit entry
+  at zone top, close-stop 4h + hard stop 9.173, T2 10.955.
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: dc24b6173749105e
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 9.6
+  actual_date: '2026-10-15T00:00:00+00:00'
+exit:
+  stop_loss: 9.173
+  stop_loss_pct: null
+  take_profit: 10.955
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: 10.47
+  actual_date: '2026-10-16T00:00:00+00:00'
+  exit_reason: target_hit
+position:
+  shares: 12.34
+  shares_remaining: 0
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-11-14'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/j/AVAXUSDT.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: AVAXUSDT
+    thesis_statement: Binance spot demand-zone dip buy (4h-demand 9.499-9.60). Limit
+      entry at zone top, close-stop 4h + hard stop 9.173, T2 10.955.
+    thesis_type: mean_reversion
+    entry_price: 9.6
+    entry_date: '2026-10-15'
+    shares: 12.34
+    stop_price: 9.173
+    target_price: 10.955
+linked_reports: []
+outcome:
+  pnl_dollars: 10.74
+  pnl_pct: 9.07
+  holding_days: 1
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null

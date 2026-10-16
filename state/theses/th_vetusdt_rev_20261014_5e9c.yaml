@@ -1,0 +1,82 @@
+thesis_id: th_vetusdt_rev_20261014_5e9c
+ticker: VETUSDT
+created_at: '2026-10-14T00:00:00+00:00'
+updated_at: '2026-10-16T10:49:31+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: CLOSED
+status_history:
+- status: IDEA
+  at: '2026-10-14T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-10-14T00:00:00+00:00'
+  reason: planned zone filled
+- status: ACTIVE
+  at: '2026-10-14T00:00:00+00:00'
+  reason: position opened
+- status: CLOSED
+  at: '2026-10-16T10:49:31+00:00'
+  reason: 'closed: stop_hit'
+  shares_sold: 16457.0
+  price: 0.0067772
+  proceeds: 111.53
+  realized_pnl: -5.27
+thesis_statement: Binance spot demand-zone dip buy (1D-demand 0.0069164-0.0070977).
+  Limit entry at zone top, close-stop 4h + hard stop 0.0067772, T2 0.0085731.
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: 4fb47850d3940e2f
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 0.0070977
+  actual_date: '2026-10-14T00:00:00+00:00'
+exit:
+  stop_loss: 0.0067772
+  stop_loss_pct: null
+  take_profit: 0.0085731
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: 0.0067772
+  actual_date: '2026-10-15T00:00:00+00:00'
+  exit_reason: stop_hit
+position:
+  shares: 16457.0
+  shares_remaining: 0
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-11-13'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/j/VETUSDT.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: VETUSDT
+    thesis_statement: Binance spot demand-zone dip buy (1D-demand 0.0069164-0.0070977).
+      Limit entry at zone top, close-stop 4h + hard stop 0.0067772, T2 0.0085731.
+    thesis_type: mean_reversion
+    entry_price: 0.0070977
+    entry_date: '2026-10-14'
+    shares: 16457
+    stop_price: 0.0067772
+    target_price: 0.0085731
+linked_reports: []
+outcome:
+  pnl_dollars: -5.27
+  pnl_pct: -4.51
+  holding_days: 1
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null

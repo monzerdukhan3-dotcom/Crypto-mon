@@ -3,10 +3,10 @@
   "theses": {
     "th_btcusdt_rev_20261013_d165": {
       "ticker": "BTCUSDT",
-      "status": "ACTIVE",
+      "status": "CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-13",
-      "updated_at": "2026-10-13",
+      "updated_at": "2026-10-16",
       "next_review_date": "2026-11-12",
       "review_status": "OK",
       "origin_fingerprint": "ea470e99d68e1f64"
@@ -20,6 +20,36 @@
       "next_review_date": "2026-11-12",
       "review_status": "OK",
       "origin_fingerprint": "0dd7aa498e428dc0"
+    },
+    "th_crvusdt_rev_20261014_c509": {
+      "ticker": "CRVUSDT",
+      "status": "CLOSED",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-14",
+      "updated_at": "2026-10-16",
+      "next_review_date": "2026-11-13",
+      "review_status": "OK",
+      "origin_fingerprint": "1b4c3e36eaa3f2c9"
+    },
+    "th_avaxusdt_rev_20261015_6cf9": {
+      "ticker": "AVAXUSDT",
+      "status": "CLOSED",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-15",
+      "updated_at": "2026-10-16",
+      "next_review_date": "2026-11-14",
+      "review_status": "OK",
+      "origin_fingerprint": "dc24b6173749105e"
+    },
+    "th_vetusdt_rev_20261014_5e9c": {
+      "ticker": "VETUSDT",
+      "status": "CLOSED",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-14",
+      "updated_at": "2026-10-16",
+      "next_review_date": "2026-11-13",
+      "review_status": "OK",
+      "origin_fingerprint": "4fb47850d3940e2f"
     }
   }
 }

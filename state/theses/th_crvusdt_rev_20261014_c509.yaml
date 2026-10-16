@@ -1,0 +1,82 @@
+thesis_id: th_crvusdt_rev_20261014_c509
+ticker: CRVUSDT
+created_at: '2026-10-14T00:00:00+00:00'
+updated_at: '2026-10-16T10:49:31+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: CLOSED
+status_history:
+- status: IDEA
+  at: '2026-10-14T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-10-14T00:00:00+00:00'
+  reason: planned zone filled
+- status: ACTIVE
+  at: '2026-10-14T00:00:00+00:00'
+  reason: position opened
+- status: CLOSED
+  at: '2026-10-16T10:49:31+00:00'
+  reason: 'closed: target_hit'
+  shares_sold: 299.43
+  price: 0.3525
+  proceeds: 105.55
+  realized_pnl: 7.19
+thesis_statement: Binance spot demand-zone dip buy (15m demand). Limit entry at zone
+  top, close-stop 4h + hard stop 0.3107, T2 0.3843.
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: 1b4c3e36eaa3f2c9
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 0.3285
+  actual_date: '2026-10-14T00:00:00+00:00'
+exit:
+  stop_loss: 0.3107
+  stop_loss_pct: null
+  take_profit: 0.3843
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: 0.3525
+  actual_date: '2026-10-15T00:00:00+00:00'
+  exit_reason: target_hit
+position:
+  shares: 299.43
+  shares_remaining: 0
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-11-13'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/j/CRVUSDT.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: CRVUSDT
+    thesis_statement: Binance spot demand-zone dip buy (15m demand). Limit entry at
+      zone top, close-stop 4h + hard stop 0.3107, T2 0.3843.
+    thesis_type: mean_reversion
+    entry_price: 0.3285
+    entry_date: '2026-10-14'
+    shares: 299.43
+    stop_price: 0.3107
+    target_price: 0.3843
+linked_reports: []
+outcome:
+  pnl_dollars: 7.19
+  pnl_pct: 7.31
+  holding_days: 1
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null
