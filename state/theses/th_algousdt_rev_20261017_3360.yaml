@@ -1,0 +1,75 @@
+thesis_id: th_algousdt_rev_20261017_3360
+ticker: ALGOUSDT
+created_at: '2026-10-17T00:00:00+00:00'
+updated_at: '2026-10-18T13:27:52+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: ACTIVE
+status_history:
+- status: IDEA
+  at: '2026-10-17T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-10-17T00:00:00+00:00'
+  reason: zone filled 2026-10-17 20:00 UTC
+- status: ACTIVE
+  at: '2026-10-17T00:00:00+00:00'
+  reason: position opened
+thesis_statement: Binance spot demand-zone dip buy (4h-demand_0.10846-0.11005). Partial
+  exit 50/50 at T1/T2, close-stop 4h + hard stop 0.10467, T2 0.1282.
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: f430475ebe0a7e1b
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 0.11005
+  actual_date: '2026-10-17T00:00:00+00:00'
+exit:
+  stop_loss: 0.10467
+  stop_loss_pct: null
+  take_profit: 0.1282
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: null
+  actual_date: null
+  exit_reason: null
+position:
+  shares: 984.0
+  shares_remaining: 984.0
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-11-16'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/j/ALGOUSDT.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: ALGOUSDT
+    thesis_statement: Binance spot demand-zone dip buy (4h-demand_0.10846-0.11005).
+      Partial exit 50/50 at T1/T2, close-stop 4h + hard stop 0.10467, T2 0.1282.
+    thesis_type: mean_reversion
+    entry_price: 0.11005
+    entry_date: '2026-10-17'
+    shares: 984
+    stop_price: 0.10467
+    target_price: 0.1282
+linked_reports: []
+outcome:
+  pnl_dollars: null
+  pnl_pct: null
+  holding_days: null
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null

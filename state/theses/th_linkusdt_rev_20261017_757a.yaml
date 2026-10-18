@@ -1,0 +1,75 @@
+thesis_id: th_linkusdt_rev_20261017_757a
+ticker: LINKUSDT
+created_at: '2026-10-17T00:00:00+00:00'
+updated_at: '2026-10-18T13:27:51+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: ACTIVE
+status_history:
+- status: IDEA
+  at: '2026-10-17T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-10-17T00:00:00+00:00'
+  reason: zone filled 2026-10-17 20:00 UTC
+- status: ACTIVE
+  at: '2026-10-17T00:00:00+00:00'
+  reason: position opened
+thesis_statement: Binance spot demand-zone dip buy (4h-demand_11.655-11.832). Partial
+  exit 50/50 at T1/T2, close-stop 4h + hard stop 11.27, T2 13.915.
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: 4507146fe8b32bfc
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 11.832
+  actual_date: '2026-10-17T00:00:00+00:00'
+exit:
+  stop_loss: 11.27
+  stop_loss_pct: null
+  take_profit: 13.915
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: null
+  actual_date: null
+  exit_reason: null
+position:
+  shares: 12.55
+  shares_remaining: 12.55
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-11-16'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/j/LINKUSDT.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: LINKUSDT
+    thesis_statement: Binance spot demand-zone dip buy (4h-demand_11.655-11.832).
+      Partial exit 50/50 at T1/T2, close-stop 4h + hard stop 11.27, T2 13.915.
+    thesis_type: mean_reversion
+    entry_price: 11.832
+    entry_date: '2026-10-17'
+    shares: 12.55
+    stop_price: 11.27
+    target_price: 13.915
+linked_reports: []
+outcome:
+  pnl_dollars: null
+  pnl_pct: null
+  holding_days: null
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null
