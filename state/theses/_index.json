@@ -50,6 +50,36 @@
       "next_review_date": "2026-11-13",
       "review_status": "OK",
       "origin_fingerprint": "4fb47850d3940e2f"
+    },
+    "th_linkusdt_rev_20261017_757a": {
+      "ticker": "LINKUSDT",
+      "status": "ACTIVE",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-18",
+      "next_review_date": "2026-11-16",
+      "review_status": "OK",
+      "origin_fingerprint": "4507146fe8b32bfc"
+    },
+    "th_algousdt_rev_20261017_3360": {
+      "ticker": "ALGOUSDT",
+      "status": "ACTIVE",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-18",
+      "next_review_date": "2026-11-16",
+      "review_status": "OK",
+      "origin_fingerprint": "f430475ebe0a7e1b"
+    },
+    "th_ondousdt_rev_20261017_3ec1": {
+      "ticker": "ONDOUSDT",
+      "status": "ACTIVE",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-17",
+      "updated_at": "2026-10-18",
+      "next_review_date": "2026-11-16",
+      "review_status": "OK",
+      "origin_fingerprint": "fe2566bbe6329c61"
     }
   }
 }
