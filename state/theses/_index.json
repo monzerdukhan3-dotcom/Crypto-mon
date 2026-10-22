@@ -53,10 +53,10 @@
     },
     "th_linkusdt_rev_20261017_757a": {
       "ticker": "LINKUSDT",
-      "status": "ACTIVE",
+      "status": "PARTIALLY_CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-17",
-      "updated_at": "2026-10-18",
+      "updated_at": "2026-10-22",
       "next_review_date": "2026-11-16",
       "review_status": "OK",
       "origin_fingerprint": "4507146fe8b32bfc"
