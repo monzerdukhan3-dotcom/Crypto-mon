@@ -1,11 +1,11 @@
 thesis_id: th_algousdt_rev_20261017_3360
 ticker: ALGOUSDT
 created_at: '2026-10-17T00:00:00+00:00'
-updated_at: '2026-10-18T13:27:52+00:00'
+updated_at: '2026-10-24T12:45:23+00:00'
 thesis_type: mean_reversion
 setup_type: null
 catalyst: null
-status: ACTIVE
+status: CLOSED
 status_history:
 - status: IDEA
   at: '2026-10-17T00:00:00+00:00'
@@ -16,6 +16,13 @@ status_history:
 - status: ACTIVE
   at: '2026-10-17T00:00:00+00:00'
   reason: position opened
+- status: CLOSED
+  at: '2026-10-24T12:45:23+00:00'
+  reason: 'closed: stop_hit'
+  shares_sold: 984.0
+  price: 0.10467
+  proceeds: 103.0
+  realized_pnl: -5.29
 thesis_statement: Binance spot demand-zone dip buy (4h-demand_0.10846-0.11005). Partial
   exit 50/50 at T1/T2, close-stop 4h + hard stop 0.10467, T2 0.1282.
 mechanism_tag: null
@@ -35,12 +42,12 @@ exit:
   take_profit: 0.1282
   take_profit_rr: null
   time_stop_days: null
-  actual_price: null
-  actual_date: null
-  exit_reason: null
+  actual_price: 0.10467
+  actual_date: '2026-10-23T20:00:00Z'
+  exit_reason: stop_hit
 position:
   shares: 984.0
-  shares_remaining: 984.0
+  shares_remaining: 0
 market_context: null
 monitoring:
   review_interval_days: 30
@@ -66,9 +73,9 @@ origin:
     target_price: 0.1282
 linked_reports: []
 outcome:
-  pnl_dollars: null
-  pnl_pct: null
-  holding_days: null
+  pnl_dollars: -5.29
+  pnl_pct: -4.89
+  holding_days: 6
   mae_pct: null
   mfe_pct: null
   mae_mfe_source: null

@@ -63,20 +63,20 @@
     },
     "th_algousdt_rev_20261017_3360": {
       "ticker": "ALGOUSDT",
-      "status": "ACTIVE",
+      "status": "CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-17",
-      "updated_at": "2026-10-18",
+      "updated_at": "2026-10-24",
       "next_review_date": "2026-11-16",
       "review_status": "OK",
       "origin_fingerprint": "f430475ebe0a7e1b"
     },
     "th_ondousdt_rev_20261017_3ec1": {
       "ticker": "ONDOUSDT",
-      "status": "ACTIVE",
+      "status": "CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-17",
-      "updated_at": "2026-10-18",
+      "updated_at": "2026-10-24",
       "next_review_date": "2026-11-16",
       "review_status": "OK",
       "origin_fingerprint": "fe2566bbe6329c61"
