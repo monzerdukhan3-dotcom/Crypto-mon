@@ -53,10 +53,10 @@
     },
     "th_linkusdt_rev_20261017_757a": {
       "ticker": "LINKUSDT",
-      "status": "PARTIALLY_CLOSED",
+      "status": "CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-17",
-      "updated_at": "2026-10-22",
+      "updated_at": "2026-10-26",
       "next_review_date": "2026-11-16",
       "review_status": "OK",
       "origin_fingerprint": "4507146fe8b32bfc"
@@ -80,6 +80,26 @@
       "next_review_date": "2026-11-16",
       "review_status": "OK",
       "origin_fingerprint": "fe2566bbe6329c61"
+    },
+    "th_solusdt_rev_20261024_df40": {
+      "ticker": "SOLUSDT",
+      "status": "ACTIVE",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-24",
+      "updated_at": "2026-10-26",
+      "next_review_date": "2026-11-23",
+      "review_status": "OK",
+      "origin_fingerprint": "7d5598cd814263f3"
+    },
+    "th_ltcusdt_rev_20261024_b4e6": {
+      "ticker": "LTCUSDT",
+      "status": "ACTIVE",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-10-24",
+      "updated_at": "2026-10-26",
+      "next_review_date": "2026-11-23",
+      "review_status": "OK",
+      "origin_fingerprint": "e5d162243f3aba19"
     }
   }
 }

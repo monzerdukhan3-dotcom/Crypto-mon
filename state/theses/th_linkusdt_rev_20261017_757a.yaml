@@ -1,11 +1,11 @@
 thesis_id: th_linkusdt_rev_20261017_757a
 ticker: LINKUSDT
 created_at: '2026-10-17T00:00:00+00:00'
-updated_at: '2026-10-22T18:30:56+00:00'
+updated_at: '2026-10-26T14:25:14+00:00'
 thesis_type: mean_reversion
 setup_type: null
 catalyst: null
-status: PARTIALLY_CLOSED
+status: CLOSED
 status_history:
 - status: IDEA
   at: '2026-10-17T00:00:00+00:00'
@@ -23,6 +23,13 @@ status_history:
   price: 12.567
   proceeds: 78.86
   realized_pnl: 4.61
+- status: CLOSED
+  at: '2026-10-26T14:25:14+00:00'
+  reason: 'closed: stop_hit'
+  shares_sold: 6.275
+  price: 11.27
+  proceeds: 70.72
+  realized_pnl: -3.53
 thesis_statement: Binance spot demand-zone dip buy (4h-demand_11.655-11.832). Partial
   exit 50/50 at T1/T2, close-stop 4h + hard stop 11.27, T2 13.915.
 mechanism_tag: null
@@ -42,12 +49,12 @@ exit:
   take_profit: 13.915
   take_profit_rr: null
   time_stop_days: null
-  actual_price: null
-  actual_date: null
-  exit_reason: null
+  actual_price: 11.27
+  actual_date: '2026-10-24T12:00:00Z'
+  exit_reason: stop_hit
 position:
   shares: 12.55
-  shares_remaining: 6.275
+  shares_remaining: 0
 market_context: null
 monitoring:
   review_interval_days: 30
@@ -73,9 +80,9 @@ origin:
     target_price: 13.915
 linked_reports: []
 outcome:
-  pnl_dollars: null
-  pnl_pct: null
-  holding_days: null
+  pnl_dollars: 1.08
+  pnl_pct: 0.73
+  holding_days: 7
   mae_pct: null
   mfe_pct: null
   mae_mfe_source: null
