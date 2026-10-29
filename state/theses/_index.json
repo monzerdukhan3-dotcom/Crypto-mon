@@ -93,10 +93,10 @@
     },
     "th_ltcusdt_rev_20261024_b4e6": {
       "ticker": "LTCUSDT",
-      "status": "ACTIVE",
+      "status": "PARTIALLY_CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-24",
-      "updated_at": "2026-10-26",
+      "updated_at": "2026-10-29",
       "next_review_date": "2026-11-23",
       "review_status": "OK",
       "origin_fingerprint": "e5d162243f3aba19"
