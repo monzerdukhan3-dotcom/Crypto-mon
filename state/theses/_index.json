@@ -83,10 +83,10 @@
     },
     "th_solusdt_rev_20261024_df40": {
       "ticker": "SOLUSDT",
-      "status": "ACTIVE",
+      "status": "CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-10-24",
-      "updated_at": "2026-10-26",
+      "updated_at": "2026-11-01",
       "next_review_date": "2026-11-23",
       "review_status": "OK",
       "origin_fingerprint": "7d5598cd814263f3"
