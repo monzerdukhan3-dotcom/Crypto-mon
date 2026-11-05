@@ -103,7 +103,7 @@
     },
     "th_xlmusdt_rev_20261104_afd1": {
       "ticker": "XLMUSDT",
-      "status": "ACTIVE",
+      "status": "PARTIALLY_CLOSED",
       "thesis_type": "mean_reversion",
       "created_at": "2026-11-04",
       "updated_at": "2026-11-05",
