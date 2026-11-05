@@ -1,0 +1,77 @@
+thesis_id: th_xlmusdt_rev_20261104_afd1
+ticker: XLMUSDT
+created_at: '2026-11-04T00:00:00+00:00'
+updated_at: '2026-11-05T15:11:24+00:00'
+thesis_type: mean_reversion
+setup_type: null
+catalyst: null
+status: ACTIVE
+status_history:
+- status: IDEA
+  at: '2026-11-04T00:00:00+00:00'
+  reason: manually entered
+- status: ENTRY_READY
+  at: '2026-11-05T15:11:23+00:00'
+  reason: zone order placed
+- status: ACTIVE
+  at: '2026-11-05T15:11:24+00:00'
+  reason: position opened
+thesis_statement: 'Binance spot demand-zone dip buy (1D-demand_0.15255-0.15828). Half
+  size (score +1). Partial exit 50/50: T1 0.1701 / T2 0.18928, close-stop 4h 0.15195
+  + hard stop 0.15076.'
+mechanism_tag: null
+evidence: []
+kill_criteria: []
+confidence: null
+confidence_score: null
+origin_fingerprint: 67a762d0a86d8ffc
+entry:
+  target_price: null
+  conditions: []
+  actual_price: 0.15828
+  actual_date: '2026-11-04T00:00:00Z'
+exit:
+  stop_loss: 0.15076
+  stop_loss_pct: null
+  take_profit: 0.18928
+  take_profit_rr: null
+  time_stop_days: null
+  actual_price: null
+  actual_date: null
+  exit_reason: null
+position:
+  shares: 469.0
+  shares_remaining: 469.0
+market_context: null
+monitoring:
+  review_interval_days: 30
+  next_review_date: '2026-12-04'
+  last_review_date: null
+  review_status: OK
+  triggers_config: []
+  alerts: []
+origin:
+  skill: manual
+  output_file: /tmp/claude-0/-home-user-Crypto-mon/5fc34d15-b6bb-5f52-ba51-1717bd5ca7c2/scratchpad/j/XLMUSDT.json
+  screening_grade: null
+  screening_score: null
+  raw_provenance:
+    ticker: XLMUSDT
+    thesis_statement: 'Binance spot demand-zone dip buy (1D-demand_0.15255-0.15828).
+      Half size (score +1). Partial exit 50/50: T1 0.1701 / T2 0.18928, close-stop
+      4h 0.15195 + hard stop 0.15076.'
+    thesis_type: mean_reversion
+    entry_price: 0.15828
+    entry_date: '2026-11-04'
+    shares: 469
+    stop_price: 0.15076
+    target_price: 0.18928
+linked_reports: []
+outcome:
+  pnl_dollars: null
+  pnl_pct: null
+  holding_days: null
+  mae_pct: null
+  mfe_pct: null
+  mae_mfe_source: null
+  lessons_learned: null
