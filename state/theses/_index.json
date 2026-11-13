@@ -110,6 +110,16 @@
       "next_review_date": "2026-12-04",
       "review_status": "OK",
       "origin_fingerprint": "67a762d0a86d8ffc"
+    },
+    "th_btcusdt_rev_20261105_30bb": {
+      "ticker": "BTCUSDT",
+      "status": "CLOSED",
+      "thesis_type": "mean_reversion",
+      "created_at": "2026-11-05",
+      "updated_at": "2026-11-13",
+      "next_review_date": "2026-12-05",
+      "review_status": "OK",
+      "origin_fingerprint": "c954029729cc3600"
     }
   }
 }
