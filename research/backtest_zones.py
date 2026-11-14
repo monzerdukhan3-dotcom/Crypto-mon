@@ -18,6 +18,7 @@ import bisect, json, math, os, sys
 from collections import defaultdict
 
 COST = float(os.environ.get("BT_COST", "0.0015"))
+T1_MIN_R = float(os.environ.get("BT_T1_MIN_R", "0"))
 MAX_HOLD_BARS = 6 * 60  # 60 days of 4H bars
 
 
@@ -204,7 +205,8 @@ def run(datadir, syms, start_ms):
             rr2 = (t2 * (1 - COST) - entry * (1 + COST)) / risk
             if rr2 < 2:
                 continue
-            mids = sorted(h for (tc, h) in highs if tc <= t and entry * 1.005 < h < above[0])
+            t1_floor = entry + T1_MIN_R * risk  # T1 must pay at least T1_MIN_R
+            mids = sorted(h for (tc, h) in highs if tc <= t and max(entry * 1.005, t1_floor) < h < above[0])
             t1 = mids[0] * 0.997 if mids else None
             row = dict(sym=sym, tf=z["tf"], t=t, entry=entry, hard=hard, close=close_lvl, t1=t1, t2=t2,
                        rr2=rr2, stop_pct=100 * (entry - hard) / entry, regime=regime_at(reg, t))
