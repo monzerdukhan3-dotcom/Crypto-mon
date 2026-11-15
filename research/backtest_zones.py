@@ -214,6 +214,7 @@ def run(datadir, syms, start_ms):
             for v in VARIANTS:
                 r, k_out = simulate(h4, a4, filled, entry, close_lvl, hard, t1, t2, v)
                 row[v] = r
+                row[v + "_exit"] = h4[k_out]["t"] if k_out is not None else h4[-1]["t"]
                 if v == "half_t1_t2":
                     exit_k = k_out
             trades.append(row)
