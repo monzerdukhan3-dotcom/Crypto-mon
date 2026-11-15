@@ -190,7 +190,7 @@ def run(datadir, syms, start_ms):
                 cands.append((filled, z))
         busy_until = 0
         for filled, z in sorted(cands, key=lambda c: (c[0], -c[1]["prox"])):
-            if times[filled] < busy_until:
+            if times[filled] <= busy_until:
                 continue
             t = h4[filled]["t"]
             entry, A = z["prox"], a4[filled - 1]
