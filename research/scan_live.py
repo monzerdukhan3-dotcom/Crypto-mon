@@ -38,7 +38,7 @@ def scan(sym):
     highs, lows = swing_highs(h4), swing_lows(h4)
     sup = zones(d1, "S", "1D") + zones(h4, "S", "4H")
     out = []
-    for z in zones(d1, "D", "1D") + zones(h4, "D", "4H"):
+    for z in zones(h4, "D", "4H"):  # 4H demand zones only (CLAUDE.md rule 2)
         if not (price * 0.85 < z["prox"] < price):
             continue
         after = [b for b in h4 if b["t"] >= z["formed"]]
@@ -55,7 +55,7 @@ def scan(sym):
         entry = z["prox"]
         liq = [l for (t, l) in lows if z["dist"] * 0.97 <= l <= z["dist"] * 1.003]
         close_lvl = min([z["dist"]] + liq) - 0.25 * a4
-        hard = min(close_lvl - 0.5 * a4, entry - 1.5 * a4)
+        hard = min(close_lvl - 0.5 * a4, entry - 1.5 * a4)  # = base - 0.75 ATR; hard stop only
         risk = entry - hard + entry * COST + hard * COST
         live_sup = [s["prox"] for s in sup if s["prox"] > entry * 1.01
                     and not any(b["c"] > s["dist"] for b in h4 if b["t"] >= s["formed"])]
@@ -70,7 +70,7 @@ def scan(sym):
         t1 = mids[0] * 0.997 if mids else None
         rr1 = (t1 * (1 - COST) - entry * (1 + COST)) / risk if t1 else None
         sd_day = vol / math.sqrt(365)
-        noise = 2 * (1 - 0.5 * (1 + math.erf(((entry - close_lvl) / entry / sd_day) / math.sqrt(2))))
+        noise = 2 * (1 - 0.5 * (1 + math.erf(((entry - hard) / entry / sd_day) / math.sqrt(2))))
         out.append(dict(sym=sym, price=price, tf=z["tf"], zone=(round(z["dist"], 6), round(z["prox"], 6)), touches=touches,
                         entry=entry, close=close_lvl, hard=hard, t1=t1, rr1=rr1, t2=t2, rr2=rr2,
                         dist_pct=100 * (entry / price - 1), stop_pct=100 * (entry - hard) / entry,
