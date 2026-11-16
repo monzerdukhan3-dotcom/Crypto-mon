@@ -32,7 +32,7 @@ description: محلل سوق كريبتو لمتداول سبوت. استخدم�
 | التمويل الحالي | Bybit: `https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT` (حقل fundingRate) | OKX: `https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP`، و Binance: `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT` |
 | سجل التمويل (30 يوماً) | OKX: `https://www.okx.com/api/v5/public/funding-rate-history?instId=BTC-USDT-SWAP&limit=100` | Binance: `https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=100` |
 | الفائدة المفتوحة | Bybit: `https://api.bybit.com/v5/market/open-interest?category=linear&symbol=BTCUSDT&intervalTime=1d&limit=30` | Binance: `https://fapi.binance.com/futures/data/openInterestHist?symbol=BTCUSDT&period=1d&limit=30` |
-| تدفقات ETF | `https://farside.co.uk/btc/` (جدول HTML، أحدث الأيام في الأسفل، عمود Total بملايين الدولارات، الأقواس = خروج) | بحث ويب: "bitcoin ETF flows" + التاريخ |
+| تدفقات ETF | `python3 -I scripts/etf_flows.py` (من `api.cryptoetf.today`، بلا مفتاح، بيانات اليوم السابق؛ تطابق جدول Farside) | لقطة Farside من المستخدم، ثم بحث ويب |
 | احتياطيات المنصات | لقطة شاشة من المستخدم (CryptoQuant، عرض 1Y مع SMA 30) | بحث ويب: "CryptoQuant exchange reserve" + الشهر الحالي |
 | خريطة التصفية | لقطة شاشة من المستخدم (CoinGlass، Binance BTC/USDT، أسبوع) | بحث ويب: "CoinGlass liquidation heatmap bitcoin" + التاريخ |
 | الخوف والطمع | `https://api.alternative.me/fng/?limit=30` | CoinMarketCap |
@@ -47,7 +47,7 @@ description: محلل سوق كريبتو لمتداول سبوت. استخدم�
 | --- | --- | --- |
 | Binance (spot وfutures) | محجوب 451 | OKX |
 | Bybit | محجوب 403 | OKX |
-| Farside | محجوب 403 (Cloudflare) | بحث ويب أو لقطة المستخدم |
+| Farside | محجوب 403 (Cloudflare) | `scripts/etf_flows.py` (يعمل مباشرة)، أو لقطة المستخدم |
 | OKX (شموع، تمويل، سجل التمويل، OI عبر `rubik/stat/contracts/open-interest-volume`) | يعمل | — |
 | alternative.me، CoinGecko global | يعملان | — |
 | Crypto.com public API | يعمل | بديل ثانٍ للشموع |
@@ -73,6 +73,10 @@ python3 -I .claude/skills/crypto-analyst/scripts/analyze.py BTC --levels 81185,7
 - السعر يهبط والاحتياطي يصعد = أخطر حالة.
 
 ## ETF (أسبوعي، ويومي قبل الدخول)
+- **المصدر الأساسي**: `python3 -I scripts/etf_flows.py`. يعطي آخر 10 أيام، ومجموع 5 أيام ودرجته، ومجموع 20 يومًا، وعدد أيام تدفق IBIT المتتالية. لا حاجة إلى لقطة Farside إلا للتحقق.
+- **ما أظهره الاختبار** (`research/etf_score_test.py`، يناير 2024 – نوفمبر 2026، نصفان):
+  - التدفقات الموجبة (درجة ‎+1) **لا تعطي أفضلية** على المعدل العام في أي من النصفين.
+  - الخروج الثقيل (مجموع 5 أيام تحت ‎-1000 مليون) تبعه شهر ضعيف في النصفين: صعد BTC بعد 30 يومًا في 33% و25% من الحالات فقط. اذكره كتحذير صريح.
 - اجمع Total لآخر 5 أيام تداول: فوق ‎+100 مليون = ‎+1، من ‎-300 إلى ‎+100 مليون = 0، تحت ‎-300 مليون = ‎-1.
 - يوم أكبر من 200 مليون في أي اتجاه = يُذكر بالاسم.
 - راقب IBIT كمؤشر مزاج المؤسسات.
