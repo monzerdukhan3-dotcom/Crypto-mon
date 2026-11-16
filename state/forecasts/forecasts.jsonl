@@ -1,0 +1,21 @@
+{"made": "2026-10-18T22:19", "asset": "BTC", "side": "above", "level": 83300.0, "days": 7.0, "prob": 0.64, "note": "random-walk touch"}
+{"made": "2026-10-18T22:19", "asset": "BTC", "side": "below", "level": 77800.0, "days": 7.0, "prob": 0.28, "note": "random-walk touch"}
+{"made": "2026-10-19T08:07", "asset": "BTC", "side": "above", "level": 83400.0, "days": 7.0, "prob": 0.83, "note": "random-walk touch"}
+{"made": "2026-10-19T08:07", "asset": "BTC", "side": "above", "level": 84400.0, "days": 7.0, "prob": 0.63, "note": "random-walk touch"}
+{"made": "2026-10-19T08:07", "asset": "BTC", "side": "below", "level": 77800.0, "days": 7.0, "prob": 0.18, "note": "random-walk touch"}
+{"made": "2026-10-24T12:42", "asset": "BTC", "side": "below", "level": 80000.0, "days": 7.0, "prob": 0.78, "note": "random-walk touch"}
+{"made": "2026-10-24T12:42", "asset": "BTC", "side": "below", "level": 77800.0, "days": 7.0, "prob": 0.27, "note": "random-walk touch"}
+{"made": "2026-10-24T13:00", "asset": "SOL", "side": "below", "level": 98.65, "days": 3.0, "prob": 0.46, "note": "zone entry touch"}
+{"made": "2026-10-24T13:00", "asset": "LTC", "side": "below", "level": 55.202, "days": 3.0, "prob": 0.64, "note": "zone entry touch"}
+{"made": "2026-10-26T14:17", "asset": "BTC", "side": "above", "level": 82600.0, "days": 7.0, "prob": 0.35, "note": "random-walk touch"}
+{"made": "2026-10-26T14:17", "asset": "BTC", "side": "below", "level": 77800.0, "days": 7.0, "prob": 0.41, "note": "random-walk touch"}
+{"made": "2026-10-29T22:09", "asset": "BTC", "side": "below", "level": 77800.0, "days": 7.0, "prob": 0.72, "note": "random-walk touch"}
+{"made": "2026-10-31T12:20", "asset": "BTC", "side": "below", "level": 75623.0, "days": 3.0, "prob": 0.39, "note": "zone entry touch"}
+{"made": "2026-11-01T20:16", "asset": "BTC", "side": "below", "level": 75623.0, "days": 7.0, "prob": 0.47, "note": "random-walk touch"}
+{"made": "2026-11-01T20:34", "asset": "BTC", "side": "below", "level": 75623.0, "days": 3.0, "prob": 0.3, "note": "zone entry touch"}
+{"made": "2026-11-01T20:34", "asset": "XLM", "side": "below", "level": 0.15828, "days": 3.0, "prob": 0.29, "note": "zone entry touch"}
+{"made": "2026-11-05T15:11", "asset": "BTC", "side": "below", "level": 75623.0, "days": 7.0, "prob": 0.66, "note": "random-walk touch"}
+{"made": "2026-11-14T22:28", "asset": "BTC", "side": "below", "level": 62300.0, "days": 7.0, "prob": 0.6, "note": "random-walk touch"}
+{"made": "2026-11-15T10:56", "asset": "BTC", "side": "below", "level": 63000.0, "days": 7.0, "prob": 0.52, "note": "random-walk touch"}
+{"made": "2026-11-15T10:56", "asset": "BTC", "side": "above", "level": 66400.0, "days": 7.0, "prob": 0.83, "note": "random-walk touch (T1 of open trade)"}
+{"made": "2026-11-15T10:56", "asset": "BTC", "side": "above", "level": 68300.0, "days": 7.0, "prob": 0.5, "note": "random-walk touch (T2 of open trade)"}
